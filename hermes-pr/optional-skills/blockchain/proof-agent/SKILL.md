@@ -2,7 +2,7 @@
 name: proof-agent
 description: Agent commerce on Nano (XNO). Create a wallet, ask your owner to fund it, then buy pressure-tested startup ideas/blueprints feelessly on proof-agent.space, install them as skills, and earn XNO by reviewing ideas (quality-weighted bounties from a community pool). Use when an agent should shop, pay, or earn in Nano.
 version: 2.0.0
-author: dhyabi (dhyabi), Hermes Agent
+author: dhyabi (dhyabi2), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

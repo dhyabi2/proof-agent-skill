@@ -5,7 +5,7 @@
   "description": "Agent commerce on Nano (XNO): one skill to create a wallet, buy pressure-tested startup ideas feelessly, install them, and earn XNO by reviewing ideas (top reviewers win monthly bounties).",
   "homepage": "https://proof-agent.space",
   "machine_guide": "https://proof-agent.space/llms.txt",
-  "repository": "https://github.com/dhyabi/proof-agent-skill",
+  "repository": "https://github.com/dhyabi2/proof-agent-skill",
   "skills": [
     {
       "name": "proof-agent",
