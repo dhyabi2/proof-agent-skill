@@ -11,7 +11,11 @@ async function rpc(action, params={}, ms=12000){ const h={'Content-Type':'applic
   throw last||new Error('all RPC endpoints failed'); }
 async function work(hash, difficulty){ for(let i=0;i<4;i++){ try{ const r=await rpc('work_generate',{hash,difficulty},28000); if(r.work)return r.work; }catch(e){} } throw new Error('work_generate failed'); }
 async function info(a){ const r=await rpc('account_info',{account:a,representative:true,pending:true}); if(r.error==='Account not found')return null; return {balance:r.balance||'0',frontier:r.frontier||'',representative:r.representative||''}; }
-function valid(a){ if(!a||(!a.startsWith('nano_')&&!a.startsWith('xrb_')))return false; try{return tools.addressToPublicKey(a)!==null;}catch{return false;} }
+// tools.addressToPublicKey decodes without checking the checksum or the length, so
+// it answers for 'nano_3abc' too. validateAddress is the one that checks both: a
+// recipient that is not a real Nano address has to be refused here, before any node
+// is called and before receive() publishes blocks for a send that cannot go out.
+function valid(a){ if(typeof a!=='string')return false; const t=a.trim(); if(!t.startsWith('nano_')&&!t.startsWith('xrb_'))return false; try{return tools.validateAddress(t)===true;}catch{return false;} }
 async function receive(seed){ const w=wallet.fromLegacySeed(seed).accounts[0]; let nfo=await info(w.address); let n=0; const hs=[];
   for(let p=0;p<10;p++){ const pend=await rpc('receivable',{account:w.address,count:'10',source:true}); const e=Object.entries(pend.blocks||{}); if(!e.length)break;
     const [bh,bi]=e[0]; const amount=typeof bi==='string'?bi:bi.amount; const op=nfo&&nfo.frontier;
@@ -26,7 +30,7 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
   const wk=await work(nfo.frontier,'fffffff800000000');
   const signed=block.send({walletBalanceRaw:nfo.balance,fromAddress:w.address,toAddress:to,representativeAddress:nfo.representative||REP,frontier:nfo.frontier,amountRaw:String(amountRaw),work:wk},w.privateKey);
   const res=await rpc('process',{json_block:'true',subtype:'send',block:signed}); if(!res.hash)throw new Error('process failed'); return res.hash; }
-(async()=>{ const [cmd,a1,a2]=process.argv.slice(2); const seed=process.env.NANO_SEED||'';
+async function main(){ const [cmd,a1,a2]=process.argv.slice(2); const seed=process.env.NANO_SEED||'';
   if(cmd==='new'){ const w=wallet.generateLegacy(); console.log(JSON.stringify({seed:w.seed,address:w.accounts[0].address})); return; }
   if(cmd==='address'){ console.log(wallet.fromLegacySeed(seed).accounts[0].address); return; }
   if(cmd==='balance'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const i=await info(a); console.log(JSON.stringify({address:a,balanceRaw:i?i.balance:'0',balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0})); return; }
@@ -35,4 +39,8 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
     console.log(JSON.stringify({address:a,needXno:a1||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0,message:'Ask your owner to fund this address'+(a1?' with about '+a1+' XNO':'')+'.'})); return; }
   if(cmd==='send'){ const hash=await send(seed,a1,a2); console.log(JSON.stringify({ok:true,hash,to:a1,amountRaw:a2})); return; }
   console.error('usage: nano-pay.cjs new | address | balance | receive | fund [amountXno] | send <toAddress> <amountRaw>'); process.exit(1);
-})().catch(e=>{ console.error('ERROR:',e.message); process.exit(1); });
+}
+// Exported so the guard and the raw conversion can be checked without a node or a
+// seed; run as a script it behaves exactly as before.
+module.exports = { xnoToRaw, valid, rpc, info, receive, send };
+if (require.main === module) main().catch(e=>{ console.error('ERROR:',e.message); process.exit(1); });

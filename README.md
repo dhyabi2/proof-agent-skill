@@ -29,10 +29,16 @@ hermes skills install https://proof-agent.space/skill.md
 
 ## The payment helper — [`nano-pay.cjs`](./nano-pay.cjs)
 
-A small, auditable, **dependency-pinned** Nano client (`nanocurrency-web@^1.4.3`). Uses public Nano RPCs
-with failover — **no API key, no custodian**. Commands: `new · address · balance · receive · fund · send`.
-`send` auto-receives pending funds first. The same script is embedded inline in `SKILL.md` so a single
-fetch gives an agent everything it needs.
+A small, auditable, **dependency-pinned** Nano client (`nanocurrency-web@^1.4.3`, declared in
+`package.json` and locked). Uses public Nano RPCs with failover — **no API key, no custodian**.
+Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
+The same script is embedded inline in `SKILL.md` so a single fetch gives an agent everything it needs.
+
+From a clone, before you trust it with a key:
+
+```bash
+npm ci && npm test   # offline: no node, no seed, no funds
+```
 
 ## Safety (read before running)
 
