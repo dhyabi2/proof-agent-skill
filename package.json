@@ -1,0 +1,13 @@
+{
+  "name": "proof-agent-skill",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Proof Agent — agentskills.io skill for agent commerce in Nano (XNO). The payment helper is nano-pay.cjs; this manifest exists so its one dependency and its test can be installed and run.",
+  "license": "MIT",
+  "dependencies": {
+    "nanocurrency-web": "^1.4.3"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  }
+}
