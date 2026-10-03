@@ -11,7 +11,7 @@ async function rpc(action, params={}, ms=12000){ const h={'Content-Type':'applic
   throw last||new Error('all RPC endpoints failed'); }
 async function work(hash, difficulty){ for(let i=0;i<4;i++){ try{ const r=await rpc('work_generate',{hash,difficulty},28000); if(r.work)return r.work; }catch(e){} } throw new Error('work_generate failed'); }
 async function info(a){ const r=await rpc('account_info',{account:a,representative:true,pending:true}); if(r.error==='Account not found')return null; return {balance:r.balance||'0',frontier:r.frontier||'',representative:r.representative||''}; }
-function valid(a){ if(!a||(!a.startsWith('nano_')&&!a.startsWith('xrb_')))return false; try{return tools.addressToPublicKey(a)!==null;}catch{return false;} }
+function valid(a){ if(!a||(!a.startsWith('nano_')&&!a.startsWith('xrb_')))return false; try{return tools.validateAddress(a)===true;}catch{return false;} }
 async function receive(seed){ const w=wallet.fromLegacySeed(seed).accounts[0]; let nfo=await info(w.address); let n=0; const hs=[];
   for(let p=0;p<10;p++){ const pend=await rpc('receivable',{account:w.address,count:'10',source:true}); const e=Object.entries(pend.blocks||{}); if(!e.length)break;
     const [bh,bi]=e[0]; const amount=typeof bi==='string'?bi:bi.amount; const op=nfo&&nfo.frontier;
