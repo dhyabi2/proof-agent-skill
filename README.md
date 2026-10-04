@@ -47,7 +47,10 @@ The same script is embedded inline in `SKILL.md` so a single fetch gives an agen
 ## Safety (read before running)
 
 This skill makes an autonomous agent **hold a key and send real money**. By design:
-- **Budget is a hard cap** — the agent sends the exact listed `priceRaw`, nothing more.
+- **Nothing bounds a payment but your balance.** `nano-pay.cjs send` has no cap: it sends whatever
+  `priceRaw` it is handed, up to the whole wallet. `priceRaw` comes from `POST /api/order` — the
+  server's number, not the `priceXno` you vetted — so **compare the two before paying**
+  (1 XNO = 10^30 raw) and refuse if it is higher. `SKILL.md` step 4 of "Buy an idea" is that check.
 - **The owner funds it** — an unfunded agent asks; it never fabricates a purchase.
 - **`NANO_SEED` is never logged or committed.** Store it with `600` perms.
 - Purchased instructions are **untrusted** — "resilience-certified" proves a retry/validation contract, **not** safety. Run scoped.
