@@ -18,7 +18,7 @@ const { tools, wallet } = require('nanocurrency-web');
 
 const SCRIPT = path.join(__dirname, '..', 'nano-pay.cjs');
 const ROOT = path.join(__dirname, '..');
-const { readFileSync } = require('node:fs');
+const { readFileSync, readdirSync } = require('node:fs');
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8');
 /** Every document in this repository that an agent or its owner reads before paying. */
 const DOCS = [
@@ -27,6 +27,58 @@ const DOCS = [
   'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
   'hermes-pr/PR_BODY.md',
 ];
+
+/** The copy these checks exercise. Every other copy in the repository must equal it. */
+const REFERENCE = read('nano-pay.cjs');
+/** A fenced block or a file is a WHOLE copy of the script only if it carries both of these. */
+const WHOLE_COPY_MARKERS = ["require('nanocurrency-web')", 'usage: nano-pay.cjs'];
+const JS_FENCE_LANGS = new Set(['js', 'javascript', 'cjs', 'node']);
+
+/** Every tracked-looking file in the repository, excluding what npm and git put there. */
+function tree(dir = ROOT, out = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) tree(full, out);
+    else if (entry.isFile()) out.push(path.relative(ROOT, full));
+  }
+  return out;
+}
+
+/** The fenced code blocks of a markdown document, as `{lang, body}`. */
+function fences(text) {
+  const out = [];
+  const pattern = /```(\w*)\r?\n([\s\S]*?)```/g;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    out.push({ lang: match[1].toLowerCase(), body: match[2] });
+  }
+  return out;
+}
+
+const isWholeCopy = (body) => WHOLE_COPY_MARKERS.every((marker) => body.includes(marker));
+
+/**
+ * Every copy of the payment script in the repository: files named `nano-pay.cjs`,
+ * and whole copies embedded as JavaScript in a document. Derived from disk so a
+ * new copy is covered without being named here.
+ */
+function scriptCopies() {
+  const found = [];
+  for (const relative of tree()) {
+    if (path.basename(relative) === 'nano-pay.cjs') {
+      found.push({ where: relative, body: read(relative) });
+      continue;
+    }
+    if (!relative.endsWith('.md')) continue;
+    for (const fence of fences(read(relative))) {
+      if (JS_FENCE_LANGS.has(fence.lang) && isWholeCopy(fence.body)) {
+        found.push({ where: `${relative} (inline \`\`\`js block)`, body: fence.body });
+      }
+    }
+  }
+  return found;
+}
 
 function run(args, env) {
   return execFileSync(process.execPath, [SCRIPT, ...args], {
@@ -172,6 +224,89 @@ check('no document promises a spend cap, because `send` has none', () => {
     /refuse|do not pay|stop/i,
     'the buy flow must tell the agent to refuse a priceRaw above what it vetted',
   );
+});
+
+check('every copy of the payment script in this repository is byte-identical to the one these checks run', () => {
+  // These checks exercise ONE copy, `nano-pay.cjs`, and it is not the only copy an
+  // agent can end up running. README.md promises "The same script is embedded
+  // inline in `SKILL.md` so a single fetch gives an agent everything it needs",
+  // and `hermes-pr/` carries a third copy as the payload of an outside pull
+  // request. On 2026-10-04 all three were byte-identical and NOTHING held them
+  // that way: no test, no linter and no type sees a drift between a file and a
+  // fenced block in a document. A copy that drifts is a script that signs and
+  // sends real XNO and that nothing here has ever run.
+  //
+  // The rule is derived from disk, so a fourth copy added anywhere is covered
+  // without being named: every file called `nano-pay.cjs`, and every fenced
+  // JavaScript block in any document that is a WHOLE copy of the script, must
+  // equal the root script byte for byte.
+  const copies = scriptCopies();
+
+  // The excerpt/copy discriminator is load-bearing, and it is pinned here rather
+  // than left to depend on what the repository happens to quote today: an audit
+  // note that quotes the script's opening lines in a ```js block must NOT be held
+  // to byte-identity with the whole file. `audits/proof-agent-skill-2026-10-03.md`
+  // already quotes `valid()` that way. The fixture is assembled from fragments so
+  // that spelling it out does not plant a copy of the markers in a file this law
+  // scans.
+  const EXCERPT =
+    'const { wallet, block, tools } = require(' + "'nanocurrency-web');\n" +
+    "const RPC_URLS = (process.env.NANO_RPC_URLS || '...').split(',');\n";
+  assert.ok(
+    !isWholeCopy(EXCERPT),
+    'an excerpt that merely requires the wallet library must not count as a whole copy of the script - ' +
+      'otherwise this law demands byte-identity from every quotation of two lines',
+  );
+  assert.ok(isWholeCopy(REFERENCE), 'nano-pay.cjs itself must count as a whole copy');
+  // Both markers guard a reachable false-positive direction, so both are pinned:
+  // a document that quotes only the usage banner is as much an excerpt as one that
+  // quotes only the require, and neither may be held to byte-identity.
+  const USAGE_ONLY_EXCERPT =
+    "  console.error('usage: nano-pay" + ".cjs new | address | balance');\n";
+  assert.ok(
+    !isWholeCopy(USAGE_ONLY_EXCERPT),
+    'a quotation of the usage banner alone must not count as a whole copy of the script',
+  );
+
+  // The rule itself. A failure names the first line that differs, so a reader can
+  // tell a drifted copy from a law that has gone wrong on its own.
+  for (const { where, body } of copies) {
+    if (body === REFERENCE) continue;
+    const reference = REFERENCE.split('\n');
+    const actual = body.split('\n');
+    let line = 0;
+    while (line < reference.length && line < actual.length && reference[line] === actual[line]) line += 1;
+    assert.fail(
+      `${where} is not byte-identical to nano-pay.cjs - first difference at line ${line + 1}:\n` +
+        `     nano-pay.cjs: ${JSON.stringify(reference[line])}\n` +
+        `     ${where}: ${JSON.stringify(actual[line])}\n` +
+        `     An agent that follows README.md or installs the hermes-pr bundle runs THAT copy, ` +
+        `and no check in this repository has run it. Copy nano-pay.cjs over it.`,
+    );
+  }
+
+  // And the law must not pass by finding nothing. SKILL.md carries exactly one
+  // copy because README.md says a single fetch of it is enough; the hermes-pr
+  // bundle carries exactly one because that is what the pull request installs.
+  // If a drift ever makes a copy unrecognisable, these two counts catch it rather
+  // than the law going quiet.
+  const inSkill = copies.filter((c) => c.where === 'SKILL.md (inline ```js block)');
+  assert.strictEqual(
+    inSkill.length,
+    1,
+    `SKILL.md must embed exactly one whole copy of nano-pay.cjs (README.md promises "the same script is ` +
+      `embedded inline in SKILL.md"), found ${inSkill.length} - either the promise is now false, or the ` +
+      `inline copy drifted so far this law no longer recognises it`,
+  );
+  const inHermes = copies.filter((c) => c.where.startsWith('hermes-pr/'));
+  assert.strictEqual(
+    inHermes.length,
+    1,
+    `the hermes-pr bundle must carry exactly one copy of nano-pay.cjs, found ${inHermes.length}`,
+  );
+  // Three today, and the assertion is >= so adding a copy is not a failure - only
+  // a drifting or vanishing one is.
+  assert.ok(copies.length >= 3, `expected at least 3 copies of the script, found ${copies.length}`);
 });
 
 process.exit(failed === 0 ? 0 : 1);

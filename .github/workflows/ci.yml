@@ -1,0 +1,52 @@
+name: ci
+
+# This repository had no CI at all until 2026-10-04: every change to a script that
+# derives a key and sends real XNO was verified only on whoever's machine made it.
+# The suite is offline by construction - `test/nano-pay.test.cjs` points the script
+# at an unreachable local RPC - so there is nothing here that can spend, receive or
+# reach the Nano network.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # `nano-pay.cjs` uses global `fetch`, so Node 18 is the floor. Measured on
+    # 2026-10-04: the suite is 6 ok / 0 fail on 18.20.8, 20.20.0, 21.7.3 and
+    # 22.22.0, with no syntax newer than 18.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    # A test that starts a subprocess and never returns is worse than a failing
+    # one, because a hang is indistinguishable from "still working". The whole
+    # suite takes about a second; a minute is a generous ceiling.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # `npm ci`, not `npm install`, is the usual advice - and this repository
+      # deliberately does not commit a lockfile (`.gitignore` lists it), so there
+      # is none to install from. Nothing is floating: package.json pins
+      # nanocurrency-web to an exact 1.4.3, and 1.4.3 pins each of its own four
+      # dependencies to an exact version too, so the installed tree is the same
+      # one the suite was measured against. `npm install` is also the command
+      # README.md tells an agent to run, which is the thing this job exists to
+      # prove still works in a fresh clone.
+      - run: npm install
+
+      - run: npm test
+
+      # The README's own first step, run exactly as it is written there: without
+      # this working, an agent cannot get a wallet and nothing else in the skill
+      # is reachable. `new` is pure key derivation - no network, no funds.
+      - name: the first step an agent takes still works in a fresh clone
+        run: node nano-pay.cjs new
