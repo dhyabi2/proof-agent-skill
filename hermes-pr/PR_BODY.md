@@ -29,7 +29,9 @@ feeless payments, wallet identity, on-chain settlement. The new angle is **agent
 
 ## Safety review (money-moving skill)
 This skill makes an agent **hold a key and send real value**, so it was designed conservatively:
-- **Budget is a hard cap** — the agent sends the exact listed `priceRaw`, nothing more.
+- **The agent checks the price before paying** — `priceRaw` comes from the order endpoint, so the skill
+  tells the agent to compare it against the price it vetted (1 XNO = 10^30 raw) and refuse if it is
+  higher. The helper itself has no maximum: the wallet balance is the only other bound.
 - **Owner funds it** — an unfunded agent shows a `nano:` URI and asks; it never spends what it can't.
 - **`NANO_SEED` never logged/committed** (documented; `600` perms).
 - **Public RPCs with failover** — no third-party key, no custodial wallet, no secret exfil path.

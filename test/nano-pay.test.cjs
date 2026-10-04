@@ -17,6 +17,16 @@ const path = require('node:path');
 const { tools, wallet } = require('nanocurrency-web');
 
 const SCRIPT = path.join(__dirname, '..', 'nano-pay.cjs');
+const ROOT = path.join(__dirname, '..');
+const { readFileSync } = require('node:fs');
+const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8');
+/** Every document in this repository that an agent or its owner reads before paying. */
+const DOCS = [
+  'README.md',
+  'SKILL.md',
+  'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
+  'hermes-pr/PR_BODY.md',
+];
 
 function run(args, env) {
   return execFileSync(process.execPath, [SCRIPT, ...args], {
@@ -100,6 +110,68 @@ check('a recipient whose checksum is wrong is refused before any work is done', 
   } catch (error) {
     assert.doesNotMatch(String(error.stderr), /invalid recipient/, 'a valid address was refused');
   }
+});
+
+check('no document promises a spend cap, because `send` has none', () => {
+  // README.md and SKILL.md both told an agent that "budget is a hard cap - the
+  // agent sends the exact listed priceRaw, nothing more". There is no budget, no
+  // cap and no maximum anywhere in this repository: `send`'s only refusals are an
+  // invalid recipient, a non-positive amount, and more than the wallet holds. The
+  // amount comes from `POST /api/order`, which is the server's number, not the
+  // `priceXno` the agent vetted in the step before - and nothing compared the two.
+  //
+  // Measured 2026-10-04 against a real unfunded wallet and the public RPC:
+  //   node nano-pay.cjs send <valid address> 1000000000000000000000000000000000000
+  //   ERROR: account unopened / no funds        <- the BALANCE refused it, not a cap
+  // A skill whose own Safety section says it makes an agent "hold a key and send
+  // real money" must not promise a bound it does not have.
+  const seed = 'A'.repeat(64);
+  const good = wallet.generateLegacy().accounts[0].address;
+  const ABSURD = '1' + '0'.repeat(36); // 10^36 raw = a million XNO
+
+  // 1. The script really has no upper bound. Offline, with the RPC unreachable, an
+  //    absurd amount must get PAST the argument checks and die on the network --
+  //    if a cap existed it would refuse here, before any RPC call.
+  try {
+    run(['send', good, ABSURD], { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' });
+    assert.fail('expected a non-zero exit');
+  } catch (error) {
+    const err = String(error.stderr);
+    assert.doesNotMatch(err, /invalid recipient|amount must be/, `refused before the RPC: ${err.trim()}`);
+    assert.match(err, /ERROR:/, `expected an error from the unreachable RPC, got: ${err.trim()}`);
+  }
+  // 2. And no identifier in the script implements one, so claim 3 below cannot be
+  //    satisfied by a cap this test failed to notice.
+  assert.doesNotMatch(
+    read('nano-pay.cjs'),
+    /\b(budget|maxRaw|maxAmount|spendCap|MAX_RAW|MAX_XNO)\b/,
+    'nano-pay.cjs now has a cap mechanism - update this law instead of deleting it',
+  );
+
+  // 3. So no document may promise one.
+  for (const file of DOCS) {
+    const text = read(file);
+    assert.doesNotMatch(text, /hard cap/i, `${file} promises a "hard cap" that nano-pay.cjs does not implement`);
+    assert.doesNotMatch(text, /nothing more/i, `${file} promises the agent sends "nothing more", which nothing enforces`);
+  }
+
+  // 4. And the buy flow must carry the one check that makes a cap real: the agent
+  //    is the only actor that knows what it vetted, so it must compare the
+  //    server's priceRaw against that before paying.
+  const skill = read('SKILL.md');
+  const buy = skill.slice(skill.indexOf('## 5) Buy an idea'));
+  assert.ok(buy.length > 0, 'SKILL.md no longer has a "Buy an idea" section');
+  assert.match(buy, /priceRaw/, 'the buy flow no longer mentions priceRaw');
+  assert.match(
+    buy,
+    /10\s*\\?\*\\?\*\s*30|10\s*\^\s*30/,
+    'the buy flow must state the raw conversion (1 XNO = 10^30 raw) so the agent can compare the two prices',
+  );
+  assert.match(
+    buy,
+    /refuse|do not pay|stop/i,
+    'the buy flow must tell the agent to refuse a priceRaw above what it vetted',
+  );
 });
 
 process.exit(failed === 0 ? 0 : 1);
