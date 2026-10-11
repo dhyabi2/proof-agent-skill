@@ -164,6 +164,60 @@ check('a recipient whose checksum is wrong is refused before any work is done', 
   }
 });
 
+check('`fund` refuses an amount that is not a decimal number, before any RPC call', () => {
+  // `fund` prints the `nano:` URI the agent's OWNER opens to fund it - step 2 of
+  // both README.md and SKILL.md, and the only way the agent gets XNO at all.
+  // `xnoToRaw` validated nothing, so `String(x).split('.')` quietly made an
+  // amount out of anything BigInt would swallow:
+  //
+  //   "-5"     -> -5000000000000000000000000000000   a NEGATIVE amount in the URI
+  //   "1.2.3"  ->  1200000000000000000000000000000   silently 1.2, while the
+  //                                                  `message` field in the same
+  //                                                  output still said "about
+  //                                                  1.2.3 XNO"
+  //   "."      ->  0                                 a URI asking for nothing
+  //   "+3"     ->  3000000000000000000000000000000   not a decimal number
+  //
+  // The URI and the human message disagreeing in one JSON object is the whole
+  // defect: the owner reads one number and their wallet shows another.
+  //
+  // `fund` also used to call `info()` - a live RPC - BEFORE parsing its
+  // argument, so a bad amount cost a network round trip and could not be
+  // reached offline at all. The parse now happens first, which is what lets
+  // this check run with no network.
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  for (const amount of ['-5', '1.2.3', '.', '+3', '1e3', 'abc', '٥', '1_0']) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected a non-zero exit`);
+    } catch (error) {
+      assert.strictEqual(error.status, 1, `fund ${JSON.stringify(amount)}: ${error.message}`);
+      assert.match(
+        String(error.stderr),
+        /ERROR: amount must be a decimal number of XNO/,
+        `fund ${JSON.stringify(amount)}: refused for the wrong reason (or too late) - ${String(error.stderr).trim()}`,
+      );
+    }
+  }
+  // The control: every decimal spelling `fund` accepted before is still
+  // accepted, so this refusal has narrowed nothing real. These get past the
+  // parse and then fail on the unreachable RPC, which is how we know the parse
+  // let them through.
+  for (const amount of ['1', '1.5', '.5', '1.', '0.0000001', '133248.297', '0', '  2  ']) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
+    } catch (error) {
+      assert.doesNotMatch(
+        String(error.stderr),
+        /amount must be a decimal number/,
+        `fund ${JSON.stringify(amount)} is a real amount and must not be refused`,
+      );
+    }
+  }
+});
+
 check('no document promises a spend cap, because `send` has none', () => {
   // README.md and SKILL.md both told an agent that "budget is a hard cap - the
   // agent sends the exact listed priceRaw, nothing more". There is no budget, no
