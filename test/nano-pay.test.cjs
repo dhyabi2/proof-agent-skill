@@ -257,6 +257,73 @@ check('`fund` refuses an amount it cannot put in the URI exactly, before any RPC
   }
 });
 
+check('`fund` accepts an exact amount written with trailing zeros, and bounds the text it echoes back', () => {
+  // The refusal of "more than 30 decimal places" first counted digits, so an
+  // EXACT amount padded with zeros - `1.0000000000000000000000000000000`, 31
+  // places - was refused although it names exactly 1 XNO. Only a nonzero digit
+  // past the 30th place is more precision than 1 raw. And the refusal quoted the
+  // trimmed text, so whitespace showed as `(got "")` and a 100k-digit argument
+  // was echoed whole onto stderr.
+  //
+  // The URI is printed only after a live RPC call, so the exact raw value is read
+  // from the parse itself, lifted out of the reference copy.
+  const start = REFERENCE.indexOf('const RAW = ');
+  const end = REFERENCE.indexOf('return r.toString(); }', start) + 'return r.toString(); }'.length;
+  assert.ok(start >= 0 && end > start, 'could not find xnoToRaw in nano-pay.cjs');
+  const xnoToRaw = new Function(`${REFERENCE.slice(start, end)}\nreturn xnoToRaw;`)();
+  const exact = [
+    ['1.0000000000000000000000000000000', '1000000000000000000000000000000'],
+    ['0.100000000000000000000000000000000000', '100000000000000000000000000000'],
+    ['133248297.9209384634633746074317682114550', '133248297920938463463374607431768211455'],
+    ['0.0000000000000000000000000000010000', '1'],
+  ];
+  for (const [amount, raw] of exact) {
+    assert.strictEqual(xnoToRaw(amount), raw, `xnoToRaw(${JSON.stringify(amount)})`);
+  }
+
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  for (const [amount] of exact) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
+    } catch (error) {
+      assert.doesNotMatch(String(error.stderr), /ERROR: amount/, `fund ${JSON.stringify(amount)} is exact and must not be refused`);
+    }
+  }
+
+  // Zeros past the 30th place add no precision, so an all-zero amount is zero.
+  for (const amount of ['0.0000000000000000000000000000000000000000', '.' + '0'.repeat(31)]) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected a non-zero exit`);
+    } catch (error) {
+      assert.strictEqual(error.status, 1, `fund ${JSON.stringify(amount)}: ${error.message}`);
+      assert.match(String(error.stderr), /ERROR: amount must be greater than 0 XNO/, `fund ${JSON.stringify(amount)}: ${String(error.stderr).trim()}`);
+      assert.doesNotMatch(String(error.stdout), /nano:/, `fund ${JSON.stringify(amount)} must print no URI`);
+    }
+  }
+
+  // The refusal quotes what was passed, and no more than about 80 characters of it.
+  const echoes = [
+    ['   ', /\(got "   "\)/],
+    ['9'.repeat(100000), /\(got "9{77}\.\.\."\)/],
+    ['1.' + '0'.repeat(30) + '1' + '7'.repeat(5000), /\(got "1\.0{30}17{44}\.\.\."\)/],
+  ];
+  for (const [amount, quoted] of echoes) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund (${amount.length} chars): expected a non-zero exit`);
+    } catch (error) {
+      const err = String(error.stderr);
+      assert.strictEqual(error.status, 1, `fund (${amount.length} chars): ${error.message}`);
+      assert.match(err, /ERROR: amount/, `fund (${amount.length} chars): ${err.slice(0, 200)}`);
+      assert.match(err, quoted, `fund (${amount.length} chars) quoted the wrong text: ${err.slice(0, 300)}`);
+      assert.ok(err.length < 400, `fund (${amount.length} chars) echoed ${err.length} bytes to stderr`);
+    }
+  }
+});
+
 check('no document promises a spend cap, because `send` has none', () => {
   // README.md and SKILL.md both told an agent that "budget is a hard cap - the
   // agent sends the exact listed priceRaw, nothing more". There is no budget, no

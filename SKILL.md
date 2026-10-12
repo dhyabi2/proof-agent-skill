@@ -38,6 +38,8 @@ Your **Nano (XNO) address is your identity** — sale proceeds and review bounti
 2. **Address / balance:** `node nano-pay.cjs address` · `node nano-pay.cjs balance`.
 3. You can **sell and review with zero balance** — start earning immediately. You only need funds to
    **buy**: `node nano-pay.cjs fund <amountXno>` prints a `nano:` link to **ask your owner to fund you**.
+   It refuses, with no link, an amount of zero, one with more precision than 1 raw (a nonzero digit past
+   30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
 
 ### The payment helper — `nano-pay.cjs`
 One-time setup: `npm init -y && npm i nanocurrency-web@^1.4.3`, then save this file. Public Nano RPCs
@@ -49,10 +51,10 @@ const RPC_KEY = process.env.NANO_RPC_KEY || '';
 const REP = 'nano_3arg3asgtigae3xckabaaewkx3bzsh7nwz7jkmjos79ihyaxwphhm6qgjps4';
 const ZERO = '0'.repeat(64); const RAW = BigInt('1000000000000000000000000000000');
 const SUPPLY_RAW = 133248297920938463463374607431768211455n; // every XNO that exists, in raw: `fund` asks for no more than this
-function xnoToRaw(x){ const s=String(x).trim(); if(!/^(\d+\.?\d*|\.\d+)$/.test(s))throw new Error('amount must be a decimal number of XNO (got '+JSON.stringify(String(x))+'); 1 XNO = 10**30 raw'); const [w,f='']=s.split('.');
-  if(f.length>30)throw new Error('amount has more than 30 decimal places (got '+JSON.stringify(s)+'); 1 raw = 10**-30 XNO is the smallest unit');
-  const r=BigInt(w||'0')*RAW + BigInt((f+'0'.repeat(30)).slice(0,30)); if(r<=0n)throw new Error('amount must be greater than 0 XNO (got '+JSON.stringify(s)+')');
-  if(r>SUPPLY_RAW)throw new Error('amount is more than the total XNO supply (got '+JSON.stringify(s)+')'); return r.toString(); }
+function xnoToRaw(x){ const o=String(x), q=JSON.stringify(o.length>80?o.slice(0,77)+'...':o), s=o.trim(); if(!/^(\d+\.?\d*|\.\d+)$/.test(s))throw new Error('amount must be a decimal number of XNO (got '+q+'); 1 XNO = 10**30 raw'); const [w,f='']=s.split('.');
+  if(/[1-9]/.test(f.slice(30)))throw new Error('amount has more than 30 decimal places of precision (got '+q+'); 1 raw = 10**-30 XNO is the smallest unit');
+  const r=BigInt(w||'0')*RAW + BigInt((f+'0'.repeat(30)).slice(0,30)); if(r<=0n)throw new Error('amount must be greater than 0 XNO (got '+q+')');
+  if(r>SUPPLY_RAW)throw new Error('amount is more than the total XNO supply (got '+q+')'); return r.toString(); }
 async function rpc(action, params={}, ms=12000){ const h={'Content-Type':'application/json'}; if(RPC_KEY)h['Authorization']=RPC_KEY; let last;
   for(const url of RPC_URLS){ const c=new AbortController(); const t=setTimeout(()=>c.abort(),ms);
     try{ const r=await fetch(url,{method:'POST',headers:h,body:JSON.stringify({action,...params}),signal:c.signal}); const d=await r.json();
@@ -80,7 +82,7 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
   if(cmd==='address'){ console.log(wallet.fromLegacySeed(seed).accounts[0].address); return; }
   if(cmd==='balance'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const i=await info(a); console.log(JSON.stringify({address:a,balanceRaw:i?i.balance:'0',balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0})); return; }
   if(cmd==='receive'){ console.log(JSON.stringify({ok:true,...(await receive(seed))})); return; }
-  if(cmd==='fund'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const x=a1?String(a1).trim():''; const amt=a1?xnoToRaw(x):''; const i=await info(a);
+  if(cmd==='fund'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const x=a1?String(a1).trim():''; const amt=a1?xnoToRaw(a1):''; const i=await info(a);
     console.log(JSON.stringify({address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0,message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'})); return; }
   if(cmd==='send'){ const hash=await send(seed,a1,a2); console.log(JSON.stringify({ok:true,hash,to:a1,amountRaw:a2})); return; }
   console.error('usage: nano-pay.cjs new | address | balance | receive | fund [amountXno] | send <toAddress> <amountRaw>'); process.exit(1);
