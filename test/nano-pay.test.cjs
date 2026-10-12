@@ -204,7 +204,7 @@ check('`fund` refuses an amount that is not a decimal number, before any RPC cal
   // accepted, so this refusal has narrowed nothing real. These get past the
   // parse and then fail on the unreachable RPC, which is how we know the parse
   // let them through.
-  for (const amount of ['1', '1.5', '.5', '1.', '0.0000001', '133248.297', '0', '  2  ']) {
+  for (const amount of ['1', '1.5', '.5', '1.', '0.0000001', '133248.297', '  2  ']) {
     try {
       run(['fund', amount], offline);
       assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
@@ -214,6 +214,45 @@ check('`fund` refuses an amount that is not a decimal number, before any RPC cal
         /amount must be a decimal number/,
         `fund ${JSON.stringify(amount)} is a real amount and must not be refused`,
       );
+    }
+  }
+});
+
+check('`fund` refuses an amount it cannot put in the URI exactly, before any RPC call', () => {
+  // `xnoToRaw` padded the fraction to 30 digits and then cut it to 30, so
+  // `fund 1.0000000000000000000000000000009` printed a URI for exactly 1 XNO
+  // while `message` said "about 1.0000000000000000000000000000009 XNO" - the URI
+  // and the message disagreeing again, one digit past the smallest unit. `fund 0`
+  // printed `?amount=0`, a URI asking for nothing, and nothing stopped an amount
+  // larger than every XNO that exists. Each is now refused, with no URI.
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  const refused = [
+    ['1.0000000000000000000000000000009', /ERROR: amount has more than 30 decimal places/],
+    ['0.0000000000000000000000000000001', /ERROR: amount has more than 30 decimal places/],
+    ['0', /ERROR: amount must be greater than 0 XNO/],
+    ['0.000', /ERROR: amount must be greater than 0 XNO/],
+    ['.0', /ERROR: amount must be greater than 0 XNO/],
+    ['133248297.920938463463374607431768211456', /ERROR: amount is more than the total XNO supply/],
+    ['133248298', /ERROR: amount is more than the total XNO supply/],
+  ];
+  for (const [amount, reason] of refused) {
+    try {
+      const out = run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected a non-zero exit, got ${String(out).trim()}`);
+    } catch (error) {
+      assert.strictEqual(error.status, 1, `fund ${JSON.stringify(amount)}: ${error.message}`);
+      assert.match(String(error.stderr), reason, `fund ${JSON.stringify(amount)}: ${String(error.stderr).trim()}`);
+      assert.doesNotMatch(String(error.stdout), /nano:/, `fund ${JSON.stringify(amount)} must print no URI`);
+    }
+  }
+  // The edges that ARE exact still get past the parse (and fail on the RPC).
+  for (const amount of ['0.000000000000000000000000000001', '1.000000000000000000000000000000', '133248297.920938463463374607431768211455']) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
+    } catch (error) {
+      assert.doesNotMatch(String(error.stderr), /ERROR: amount/, `fund ${JSON.stringify(amount)} is exact and must not be refused`);
     }
   }
 });
