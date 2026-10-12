@@ -324,6 +324,55 @@ check('`fund` accepts an exact amount written with trailing zeros, and bounds th
   }
 });
 
+check('`fund` reports an accepted amount in normalized form, so its output stays bounded', () => {
+  // needXno and message used to repeat the argument as typed, so an EXACT amount
+  // such as `1.<100000 zeros>` was accepted and echoed twice, about 200 KB on
+  // stdout. Both now show the amount the URI asks for: the whole part with no
+  // leading zeros and the fraction with no trailing zeros - at most 40 characters.
+  // The URI itself is unchanged. A local mock RPC answers "Account not found" so
+  // `fund` reaches its output offline; it runs in a child process because
+  // execFileSync blocks this one.
+  const driver = `
+    const http = require('node:http');
+    const { execFile } = require('node:child_process');
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end('{"error":"Account not found"}'); });
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const env = { ...process.env, NANO_SEED: 'A'.repeat(64), NANO_RPC_URLS: 'http://127.0.0.1:' + server.address().port };
+      execFile(process.execPath, [process.argv[1], 'fund', process.argv[2]], { env, maxBuffer: 1 << 26 }, (error, stdout, stderr) => {
+        server.close();
+        process.stdout.write(JSON.stringify({ code: error ? error.code : 0, stdout, stderr }));
+      });
+    });`;
+  const fund = (amount) => JSON.parse(execFileSync(process.execPath, ['-e', driver, SCRIPT, amount], { encoding: 'utf8', maxBuffer: 1 << 26 }));
+  const SUPPLY = '133248297.920938463463374607431768211455';
+  const cases = [
+    ['1.' + '0'.repeat(100000), '1', '1000000000000000000000000000000'],
+    ['007.50', '7.5', '7500000000000000000000000000000'],
+    [' 2 ', '2', '2000000000000000000000000000000'],
+    ['1.0000000000000000000000000000000', '1', '1000000000000000000000000000000'],
+    ['.5', '0.5', '500000000000000000000000000000'],
+    ['0.000000000000000000000000000001', '0.000000000000000000000000000001', '1'],
+    [SUPPLY, SUPPLY, '133248297920938463463374607431768211455'],
+  ];
+  for (const [amount, shown, raw] of cases) {
+    const label = amount.length > 40 ? `(${amount.length} chars)` : JSON.stringify(amount);
+    const result = fund(amount);
+    assert.strictEqual(result.code, 0, `fund ${label}: ${result.stderr.slice(0, 300)}`);
+    assert.ok(result.stdout.length < 600, `fund ${label} printed ${result.stdout.length} bytes`);
+    const out = JSON.parse(result.stdout);
+    assert.strictEqual(out.needXno, shown, `fund ${label}: needXno`);
+    assert.strictEqual(out.message, `Ask your owner to fund this address with about ${shown} XNO.`, `fund ${label}: message`);
+    assert.strictEqual(out.uri, `nano:${out.address}?amount=${raw}`, `fund ${label}: uri`);
+  }
+  // With no amount, there is still no amount anywhere.
+  const bare = JSON.parse(fund('').stdout);
+  assert.strictEqual(bare.needXno, null);
+  assert.strictEqual(bare.uri, `nano:${bare.address}`);
+});
+
 check('no document promises a spend cap, because `send` has none', () => {
   // README.md and SKILL.md both told an agent that "budget is a hard cap - the
   // agent sends the exact listed priceRaw, nothing more". There is no budget, no

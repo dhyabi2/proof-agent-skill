@@ -82,7 +82,7 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
   if(cmd==='address'){ console.log(wallet.fromLegacySeed(seed).accounts[0].address); return; }
   if(cmd==='balance'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const i=await info(a); console.log(JSON.stringify({address:a,balanceRaw:i?i.balance:'0',balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0})); return; }
   if(cmd==='receive'){ console.log(JSON.stringify({ok:true,...(await receive(seed))})); return; }
-  if(cmd==='fund'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const x=a1?String(a1).trim():''; const amt=a1?xnoToRaw(a1):''; const i=await info(a);
+  if(cmd==='fund'){ const a=wallet.fromLegacySeed(seed).accounts[0].address; const amt=a1?xnoToRaw(a1):''; const r=amt?BigInt(amt):0n; const x=amt?(r/RAW)+(r%RAW?'.'+(r%RAW).toString().padStart(30,'0').replace(/0+$/,''):''):''; const i=await info(a);
     console.log(JSON.stringify({address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0,message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'})); return; }
   if(cmd==='send'){ const hash=await send(seed,a1,a2); console.log(JSON.stringify({ok:true,hash,to:a1,amountRaw:a2})); return; }
   console.error('usage: nano-pay.cjs new | address | balance | receive | fund [amountXno] | send <toAddress> <amountRaw>'); process.exit(1);
