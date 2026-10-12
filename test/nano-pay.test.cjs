@@ -204,7 +204,7 @@ check('`fund` refuses an amount that is not a decimal number, before any RPC cal
   // accepted, so this refusal has narrowed nothing real. These get past the
   // parse and then fail on the unreachable RPC, which is how we know the parse
   // let them through.
-  for (const amount of ['1', '1.5', '.5', '1.', '0.0000001', '133248.297', '0', '  2  ']) {
+  for (const amount of ['1', '1.5', '.5', '1.', '0.0000001', '133248.297', '  2  ']) {
     try {
       run(['fund', amount], offline);
       assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
@@ -216,6 +216,161 @@ check('`fund` refuses an amount that is not a decimal number, before any RPC cal
       );
     }
   }
+});
+
+check('`fund` refuses an amount it cannot put in the URI exactly, before any RPC call', () => {
+  // `xnoToRaw` padded the fraction to 30 digits and then cut it to 30, so
+  // `fund 1.0000000000000000000000000000009` printed a URI for exactly 1 XNO
+  // while `message` said "about 1.0000000000000000000000000000009 XNO" - the URI
+  // and the message disagreeing again, one digit past the smallest unit. `fund 0`
+  // printed `?amount=0`, a URI asking for nothing, and nothing stopped an amount
+  // larger than every XNO that exists. Each is now refused, with no URI.
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  const refused = [
+    ['1.0000000000000000000000000000009', /ERROR: amount has more than 30 decimal places/],
+    ['0.0000000000000000000000000000001', /ERROR: amount has more than 30 decimal places/],
+    ['0', /ERROR: amount must be greater than 0 XNO/],
+    ['0.000', /ERROR: amount must be greater than 0 XNO/],
+    ['.0', /ERROR: amount must be greater than 0 XNO/],
+    ['133248297.920938463463374607431768211456', /ERROR: amount is more than the total XNO supply/],
+    ['133248298', /ERROR: amount is more than the total XNO supply/],
+  ];
+  for (const [amount, reason] of refused) {
+    try {
+      const out = run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected a non-zero exit, got ${String(out).trim()}`);
+    } catch (error) {
+      assert.strictEqual(error.status, 1, `fund ${JSON.stringify(amount)}: ${error.message}`);
+      assert.match(String(error.stderr), reason, `fund ${JSON.stringify(amount)}: ${String(error.stderr).trim()}`);
+      assert.doesNotMatch(String(error.stdout), /nano:/, `fund ${JSON.stringify(amount)} must print no URI`);
+    }
+  }
+  // The edges that ARE exact still get past the parse (and fail on the RPC).
+  for (const amount of ['0.000000000000000000000000000001', '1.000000000000000000000000000000', '133248297.920938463463374607431768211455']) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
+    } catch (error) {
+      assert.doesNotMatch(String(error.stderr), /ERROR: amount/, `fund ${JSON.stringify(amount)} is exact and must not be refused`);
+    }
+  }
+});
+
+check('`fund` accepts an exact amount written with trailing zeros, and bounds the text it echoes back', () => {
+  // The refusal of "more than 30 decimal places" first counted digits, so an
+  // EXACT amount padded with zeros - `1.0000000000000000000000000000000`, 31
+  // places - was refused although it names exactly 1 XNO. Only a nonzero digit
+  // past the 30th place is more precision than 1 raw. And the refusal quoted the
+  // trimmed text, so whitespace showed as `(got "")` and a 100k-digit argument
+  // was echoed whole onto stderr.
+  //
+  // The URI is printed only after a live RPC call, so the exact raw value is read
+  // from the parse itself, lifted out of the reference copy.
+  const start = REFERENCE.indexOf('const RAW = ');
+  const end = REFERENCE.indexOf('return r.toString(); }', start) + 'return r.toString(); }'.length;
+  assert.ok(start >= 0 && end > start, 'could not find xnoToRaw in nano-pay.cjs');
+  const xnoToRaw = new Function(`${REFERENCE.slice(start, end)}\nreturn xnoToRaw;`)();
+  const exact = [
+    ['1.0000000000000000000000000000000', '1000000000000000000000000000000'],
+    ['0.100000000000000000000000000000000000', '100000000000000000000000000000'],
+    ['133248297.9209384634633746074317682114550', '133248297920938463463374607431768211455'],
+    ['0.0000000000000000000000000000010000', '1'],
+  ];
+  for (const [amount, raw] of exact) {
+    assert.strictEqual(xnoToRaw(amount), raw, `xnoToRaw(${JSON.stringify(amount)})`);
+  }
+
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  for (const [amount] of exact) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected the RPC to be the thing that fails`);
+    } catch (error) {
+      assert.doesNotMatch(String(error.stderr), /ERROR: amount/, `fund ${JSON.stringify(amount)} is exact and must not be refused`);
+    }
+  }
+
+  // Zeros past the 30th place add no precision, so an all-zero amount is zero.
+  for (const amount of ['0.0000000000000000000000000000000000000000', '.' + '0'.repeat(31)]) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund ${JSON.stringify(amount)}: expected a non-zero exit`);
+    } catch (error) {
+      assert.strictEqual(error.status, 1, `fund ${JSON.stringify(amount)}: ${error.message}`);
+      assert.match(String(error.stderr), /ERROR: amount must be greater than 0 XNO/, `fund ${JSON.stringify(amount)}: ${String(error.stderr).trim()}`);
+      assert.doesNotMatch(String(error.stdout), /nano:/, `fund ${JSON.stringify(amount)} must print no URI`);
+    }
+  }
+
+  // The refusal quotes what was passed, and no more than about 80 characters of it.
+  const echoes = [
+    ['   ', /\(got "   "\)/],
+    ['9'.repeat(100000), /\(got "9{77}\.\.\."\)/],
+    ['1.' + '0'.repeat(30) + '1' + '7'.repeat(5000), /\(got "1\.0{30}17{44}\.\.\."\)/],
+  ];
+  for (const [amount, quoted] of echoes) {
+    try {
+      run(['fund', amount], offline);
+      assert.fail(`fund (${amount.length} chars): expected a non-zero exit`);
+    } catch (error) {
+      const err = String(error.stderr);
+      assert.strictEqual(error.status, 1, `fund (${amount.length} chars): ${error.message}`);
+      assert.match(err, /ERROR: amount/, `fund (${amount.length} chars): ${err.slice(0, 200)}`);
+      assert.match(err, quoted, `fund (${amount.length} chars) quoted the wrong text: ${err.slice(0, 300)}`);
+      assert.ok(err.length < 400, `fund (${amount.length} chars) echoed ${err.length} bytes to stderr`);
+    }
+  }
+});
+
+check('`fund` reports an accepted amount in normalized form, so its output stays bounded', () => {
+  // needXno and message used to repeat the argument as typed, so an EXACT amount
+  // such as `1.<100000 zeros>` was accepted and echoed twice, about 200 KB on
+  // stdout. Both now show the amount the URI asks for: the whole part with no
+  // leading zeros and the fraction with no trailing zeros - at most 40 characters.
+  // The URI itself is unchanged. A local mock RPC answers "Account not found" so
+  // `fund` reaches its output offline; it runs in a child process because
+  // execFileSync blocks this one.
+  const driver = `
+    const http = require('node:http');
+    const { execFile } = require('node:child_process');
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => { res.setHeader('Content-Type', 'application/json'); res.end('{"error":"Account not found"}'); });
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const env = { ...process.env, NANO_SEED: 'A'.repeat(64), NANO_RPC_URLS: 'http://127.0.0.1:' + server.address().port };
+      execFile(process.execPath, [process.argv[1], 'fund', process.argv[2]], { env, maxBuffer: 1 << 26 }, (error, stdout, stderr) => {
+        server.close();
+        process.stdout.write(JSON.stringify({ code: error ? error.code : 0, stdout, stderr }));
+      });
+    });`;
+  const fund = (amount) => JSON.parse(execFileSync(process.execPath, ['-e', driver, SCRIPT, amount], { encoding: 'utf8', maxBuffer: 1 << 26 }));
+  const SUPPLY = '133248297.920938463463374607431768211455';
+  const cases = [
+    ['1.' + '0'.repeat(100000), '1', '1000000000000000000000000000000'],
+    ['007.50', '7.5', '7500000000000000000000000000000'],
+    [' 2 ', '2', '2000000000000000000000000000000'],
+    ['1.0000000000000000000000000000000', '1', '1000000000000000000000000000000'],
+    ['.5', '0.5', '500000000000000000000000000000'],
+    ['0.000000000000000000000000000001', '0.000000000000000000000000000001', '1'],
+    [SUPPLY, SUPPLY, '133248297920938463463374607431768211455'],
+  ];
+  for (const [amount, shown, raw] of cases) {
+    const label = amount.length > 40 ? `(${amount.length} chars)` : JSON.stringify(amount);
+    const result = fund(amount);
+    assert.strictEqual(result.code, 0, `fund ${label}: ${result.stderr.slice(0, 300)}`);
+    assert.ok(result.stdout.length < 600, `fund ${label} printed ${result.stdout.length} bytes`);
+    const out = JSON.parse(result.stdout);
+    assert.strictEqual(out.needXno, shown, `fund ${label}: needXno`);
+    assert.strictEqual(out.message, `Ask your owner to fund this address with about ${shown} XNO.`, `fund ${label}: message`);
+    assert.strictEqual(out.uri, `nano:${out.address}?amount=${raw}`, `fund ${label}: uri`);
+  }
+  // With no amount, there is still no amount anywhere.
+  const bare = JSON.parse(fund('').stdout);
+  assert.strictEqual(bare.needXno, null);
+  assert.strictEqual(bare.uri, `nano:${bare.address}`);
 });
 
 check('no document promises a spend cap, because `send` has none', () => {
