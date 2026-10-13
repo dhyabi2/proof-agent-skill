@@ -18,7 +18,7 @@ const { tools, wallet } = require('nanocurrency-web');
 
 const SCRIPT = path.join(__dirname, '..', 'nano-pay.cjs');
 const ROOT = path.join(__dirname, '..');
-const { readFileSync, readdirSync } = require('node:fs');
+const { existsSync, readFileSync, readdirSync } = require('node:fs');
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8');
 /** Every document in this repository that an agent or its owner reads before paying. */
 const DOCS = [
@@ -566,14 +566,24 @@ check('every document installs the exact nanocurrency-web the suite ran against'
 // 1.x anyway. So every by-hand install command in the documents that names the
 // library must ask for the pinned version AND save it exact, and each document
 // that tells an agent to set the script up alone must carry such a line.
-// Which flags make each manager save the exact version. npm ignores `--exact`
-// (`npm i --exact x@1.4.3` still saves "^1.4.3"), so it is not accepted there.
-const EXACT_FLAG = {
-  npm: (t) => t === '--save-exact' || t === '--save-exact=true' || /^-[A-Za-z]*E[A-Za-z]*$/.test(t),
-  pnpm: (t) => t === '-E' || t === '--save-exact',
-  yarn: (t) => t === '-E' || t === '--exact',
-  bun: (t) => t === '-E' || t === '--exact',
+// Which flags make each manager save the exact version, and which undo it.
+// npm ignores `--exact` (`npm i --exact x@1.4.3` still saves "^1.4.3"), so it is
+// not accepted there. The last of these on a command wins, as it does for npm:
+// `npm i -E x@1.4.3 --save-exact=false` saves a caret.
+const EXACT_FLAGS = {
+  npm: {
+    on: (t) => t === '--save-exact' || t === '--save-exact=true' || /^-[A-Za-z]*E[A-Za-z]*$/.test(t),
+    off: (t) => t === '--save-exact=false' || t === '--no-save-exact',
+  },
+  pnpm: {
+    on: (t) => t === '-E' || t === '--save-exact' || t === '--save-exact=true',
+    off: (t) => t === '--save-exact=false' || t === '--no-save-exact',
+  },
+  yarn: { on: (t) => t === '-E' || t === '--exact', off: (t) => t === '--exact=false' || t === '--no-exact' },
+  bun: { on: (t) => t === '-E' || t === '--exact', off: (t) => t === '--exact=false' || t === '--no-exact' },
 };
+const savesExact = (manager, tokens) =>
+  tokens.reduce((exact, t) => (EXACT_FLAGS[manager].on(t) ? true : EXACT_FLAGS[manager].off(t) ? false : exact), false);
 /** Install verbs per manager, npm's aliases (and its accepted typo) included. */
 const INSTALL_VERBS = {
   npm: ['install', 'instal', 'insta', 'inst', 'ins', 'in', 'i', 'isntall', 'isntal', 'isnta', 'isnt', 'add'],
@@ -583,46 +593,81 @@ const INSTALL_VERBS = {
 };
 // One shell command: manager, any leading flags, verb, then arguments up to a
 // backtick, separator, shell comment or end of line.
+const COMMAND_END = /[`&|;#]/;
 const INSTALL_COMMAND = new RegExp(
   `\\b(npm|pnpm|yarn|bun)((?:\\s+-[-\\w=]*)*)\\s+(${[...new Set(Object.values(INSTALL_VERBS).flat())]
     .sort((a, b) => b.length - a.length)
     .join('|')})(?![-\\w])([^\`&|;#\\n]*)`,
   'g',
 );
+/** A token as the shell would see it: no surrounding quotes, prose punctuation or markup. */
+function bareToken(token) {
+  let t = token;
+  for (let prev = null; prev !== t; ) {
+    prev = t;
+    t = t.replace(/^(?:<code>|\*\*|["'`(*_])/, '').replace(/(?:<\/code>|\*\*|[.,;:)\]"'`*_])$/, '');
+  }
+  return t;
+}
+const isPackage = (t) => t.startsWith('nanocurrency-web');
+const words = (text) => text.trim().split(/\s+/).filter(Boolean).map(bareToken).filter(Boolean);
 const INSTALL_DOCS = [
   'README.md',
   'SKILL.md',
   'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
 ];
-/** Every text document in the tree an agent could copy a command from; audits/ are historical records. */
-const installScannedDocs = () =>
-  tree().filter((f) => /\.(md|sh|ya?ml|json)$/.test(f) && !f.split(path.sep).includes('audits'));
+/**
+ * Every text document an agent could copy a command from, as '/'-separated
+ * paths on every platform: the files git tracks (so untracked scratch files do
+ * not fail the suite), or the whole tree when git or a checkout is unavailable.
+ * audits/ are historical records of what was wrong, so they are left out.
+ */
+function installScannedDocs() {
+  let files;
+  try {
+    files = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\0')
+      .filter((f) => f && existsSync(path.join(ROOT, f)));
+  } catch {
+    files = tree().map((f) => f.split(path.sep).join('/'));
+  }
+  return files.filter((f) => /\.(md|sh|ya?ml|json)$/.test(f) && !f.split('/').includes('audits'));
+}
 check('every by-hand install of nanocurrency-web is pinned exact, per document', () => {
   const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
   const bad = [];
   const counts = {};
   const docs = installScannedDocs();
-  for (const doc of INSTALL_DOCS) assert.ok(docs.includes(doc), `${doc} is missing from the scanned tree`);
+  for (const doc of INSTALL_DOCS) assert.ok(docs.includes(doc), `${doc} is missing from the scanned documents`);
   for (const doc of docs) {
     counts[doc] = 0;
     const lines = read(doc).split('\n');
     lines.forEach((line, i) => {
-      // Markdown prose is hard-wrapped: a command that runs to the end of its
-      // line may carry its package on the next one, so read the two together.
-      // Only commands that start on this line are counted, so none counts twice.
-      const runsToEnd = [...line.matchAll(INSTALL_COMMAND)].some((m) => m.index + m[0].length === line.length);
-      const text = doc.endsWith('.md') && runsToEnd && i + 1 < lines.length ? `${line} ${lines[i + 1]}` : line;
-      for (const m of text.matchAll(INSTALL_COMMAND)) {
-        if (m.index >= line.length) continue;
+      for (const m of line.matchAll(INSTALL_COMMAND)) {
         const [whole, manager, preFlags, verb, args] = m;
         if (!INSTALL_VERBS[manager].includes(verb)) continue;
-        const tokens = `${preFlags} ${args}`.trim().split(/\s+/).filter(Boolean).map((t) => t.replace(/^["']|["']$/g, ''));
-        const pkg = tokens.filter((t) => t.startsWith('nanocurrency-web'));
+        const tokens = words(`${preFlags} ${args}`);
+        // Markdown prose is hard-wrapped, so a command that runs to the end of
+        // its line with no package yet may carry it on the next line. Borrow
+        // from that line only its leading flags and the package token, and only
+        // when the package is the first non-flag token there: a flag can then
+        // only come from the next line when it precedes the package, so prose
+        // after a complete command ("-E is what pins it.") is never read as one.
+        if (
+          doc.endsWith('.md') &&
+          m.index + whole.length === line.length &&
+          !tokens.some(isPackage) &&
+          i + 1 < lines.length
+        ) {
+          const next = words(lines[i + 1].split(COMMAND_END)[0]);
+          const first = next.findIndex((t) => !t.startsWith('-'));
+          if (first !== -1 && isPackage(next[first])) tokens.push(...next.slice(0, first + 1));
+        }
+        const pkg = tokens.filter(isPackage);
         if (pkg.length === 0) continue;
         counts[doc] += 1;
         const exactSpec = pkg.every((t) => t === `nanocurrency-web@${pinned}`);
-        const exactFlag = tokens.some(EXACT_FLAG[manager]);
-        if (!exactSpec || !exactFlag) bad.push(`${doc}:${i + 1}: ${whole.trim()}`);
+        if (!exactSpec || !savesExact(manager, tokens)) bad.push(`${doc}:${i + 1}: ${whole.trim()}`);
       }
     });
   }
