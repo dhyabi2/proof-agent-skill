@@ -18,7 +18,7 @@ const { tools, wallet } = require('nanocurrency-web');
 
 const SCRIPT = path.join(__dirname, '..', 'nano-pay.cjs');
 const ROOT = path.join(__dirname, '..');
-const { readFileSync, readdirSync } = require('node:fs');
+const { existsSync, readFileSync, readdirSync } = require('node:fs');
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8');
 /** Every document in this repository that an agent or its owner reads before paying. */
 const DOCS = [
@@ -556,6 +556,131 @@ check('every document installs the exact nanocurrency-web the suite ran against'
   // The law must not pass by matching nothing: SKILL.md's setup line is the one
   // an agent that fetched only that file reads.
   assert.ok(seen >= 2, `expected at least 2 documented install specs, found ${seen}`);
+});
+
+// The check above reads only `nanocurrency-web@<spec>`, so it let two things
+// through. A bare `npm i nanocurrency-web` carries no `@` at all and installs
+// whatever `latest` is - 2.0.0 today. And `npm i nanocurrency-web@1.4.3`
+// without -E still writes "^1.4.3" into the reader's own package.json, so the
+// first `npm update`, or any install without that lockfile, floats it across
+// 1.x anyway. So every by-hand install command in the documents that names the
+// library must ask for the pinned version AND save it exact, and each document
+// that tells an agent to set the script up alone must carry such a line.
+// Which flags make each manager save the exact version, and which undo it.
+// npm ignores `--exact` (`npm i --exact x@1.4.3` still saves "^1.4.3"), so it is
+// not accepted there. The last of these on a command wins, as it does for npm:
+// `npm i -E x@1.4.3 --save-exact=false` saves a caret.
+const EXACT_FLAGS = {
+  npm: {
+    on: (t) => t === '--save-exact' || t === '--save-exact=true' || /^-[A-Za-z]*E[A-Za-z]*$/.test(t),
+    off: (t) => t === '--save-exact=false' || t === '--no-save-exact',
+  },
+  pnpm: {
+    on: (t) => t === '-E' || t === '--save-exact' || t === '--save-exact=true',
+    off: (t) => t === '--save-exact=false' || t === '--no-save-exact',
+  },
+  yarn: { on: (t) => t === '-E' || t === '--exact', off: (t) => t === '--exact=false' || t === '--no-exact' },
+  bun: { on: (t) => t === '-E' || t === '--exact', off: (t) => t === '--exact=false' || t === '--no-exact' },
+};
+const savesExact = (manager, tokens) =>
+  tokens.reduce((exact, t) => (EXACT_FLAGS[manager].on(t) ? true : EXACT_FLAGS[manager].off(t) ? false : exact), false);
+/** Install verbs per manager, npm's aliases (and its accepted typo) included. */
+const INSTALL_VERBS = {
+  npm: ['install', 'instal', 'insta', 'inst', 'ins', 'in', 'i', 'isntall', 'isntal', 'isnta', 'isnt', 'add'],
+  pnpm: ['install', 'add', 'i'],
+  yarn: ['install', 'add'],
+  bun: ['install', 'add', 'i', 'a'],
+};
+// One shell command: manager, any leading flags, verb, then arguments up to a
+// backtick, separator, shell comment or end of line.
+const COMMAND_END = /[`&|;#]/;
+const INSTALL_COMMAND = new RegExp(
+  `\\b(npm|pnpm|yarn|bun)((?:\\s+-[-\\w=]*)*)\\s+(${[...new Set(Object.values(INSTALL_VERBS).flat())]
+    .sort((a, b) => b.length - a.length)
+    .join('|')})(?![-\\w])([^\`&|;#\\n]*)`,
+  'g',
+);
+/** A token as the shell would see it: no surrounding quotes, prose punctuation or markup. */
+function bareToken(token) {
+  let t = token;
+  for (let prev = null; prev !== t; ) {
+    prev = t;
+    t = t.replace(/^(?:<code>|\*\*|["'`(*_])/, '').replace(/(?:<\/code>|\*\*|[.,;:)\]"'`*_])$/, '');
+  }
+  return t;
+}
+const isPackage = (t) => t.startsWith('nanocurrency-web');
+const words = (text) => text.trim().split(/\s+/).filter(Boolean).map(bareToken).filter(Boolean);
+const INSTALL_DOCS = [
+  'README.md',
+  'SKILL.md',
+  'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
+];
+/**
+ * Every text document an agent could copy a command from, as '/'-separated
+ * paths on every platform: the files git tracks (so untracked scratch files do
+ * not fail the suite), or the whole tree when git or a checkout is unavailable.
+ * audits/ are historical records of what was wrong, so they are left out.
+ */
+function installScannedDocs() {
+  let files;
+  try {
+    files = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\0')
+      .filter((f) => f && existsSync(path.join(ROOT, f)));
+  } catch {
+    files = tree().map((f) => f.split(path.sep).join('/'));
+  }
+  return files.filter((f) => /\.(md|sh|ya?ml|json)$/.test(f) && !f.split('/').includes('audits'));
+}
+check('every by-hand install of nanocurrency-web is pinned exact, per document', () => {
+  const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
+  const bad = [];
+  const counts = {};
+  const docs = installScannedDocs();
+  for (const doc of INSTALL_DOCS) assert.ok(docs.includes(doc), `${doc} is missing from the scanned documents`);
+  for (const doc of docs) {
+    counts[doc] = 0;
+    const lines = read(doc).split('\n');
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(INSTALL_COMMAND)) {
+        const [whole, manager, preFlags, verb, args] = m;
+        if (!INSTALL_VERBS[manager].includes(verb)) continue;
+        const tokens = words(`${preFlags} ${args}`);
+        // Markdown prose is hard-wrapped, so a command that runs to the end of
+        // its line with no package yet may carry it on the next line. Borrow
+        // from that line only its leading flags and the package token, and only
+        // when the package is the first non-flag token there: a flag can then
+        // only come from the next line when it precedes the package, so prose
+        // after a complete command ("-E is what pins it.") is never read as one.
+        if (
+          doc.endsWith('.md') &&
+          m.index + whole.length === line.length &&
+          !tokens.some(isPackage) &&
+          i + 1 < lines.length
+        ) {
+          const next = words(lines[i + 1].split(COMMAND_END)[0]);
+          const first = next.findIndex((t) => !t.startsWith('-'));
+          if (first !== -1 && isPackage(next[first])) tokens.push(...next.slice(0, first + 1));
+        }
+        const pkg = tokens.filter(isPackage);
+        if (pkg.length === 0) continue;
+        counts[doc] += 1;
+        const exactSpec = pkg.every((t) => t === `nanocurrency-web@${pinned}`);
+        if (!exactSpec || !savesExact(manager, tokens)) bad.push(`${doc}:${i + 1}: ${whole.trim()}`);
+      }
+    });
+  }
+  assert.deepStrictEqual(
+    bad,
+    [],
+    `these install lines would not reproduce the exact nanocurrency-web ${pinned} the suite ran ` +
+      `against (each must read \`npm i -E nanocurrency-web@${pinned}\` or use --save-exact):\n  ` +
+      bad.join('\n  '),
+  );
+  for (const doc of INSTALL_DOCS) {
+    assert.ok(counts[doc] >= 1, `${doc} must carry a by-hand install line for nanocurrency-web, found none`);
+  }
 });
 
 process.exit(failed === 0 ? 0 : 1);
