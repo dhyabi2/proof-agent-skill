@@ -566,29 +566,63 @@ check('every document installs the exact nanocurrency-web the suite ran against'
 // 1.x anyway. So every by-hand install command in the documents that names the
 // library must ask for the pinned version AND save it exact, and each document
 // that tells an agent to set the script up alone must carry such a line.
-const EXACT_FLAGS = new Set(['-E', '--save-exact', '--exact']);
+// Which flags make each manager save the exact version. npm ignores `--exact`
+// (`npm i --exact x@1.4.3` still saves "^1.4.3"), so it is not accepted there.
+const EXACT_FLAG = {
+  npm: (t) => t === '--save-exact' || t === '--save-exact=true' || /^-[A-Za-z]*E[A-Za-z]*$/.test(t),
+  pnpm: (t) => t === '-E' || t === '--save-exact',
+  yarn: (t) => t === '-E' || t === '--exact',
+  bun: (t) => t === '-E' || t === '--exact',
+};
+/** Install verbs per manager, npm's aliases (and its accepted typo) included. */
+const INSTALL_VERBS = {
+  npm: ['install', 'instal', 'insta', 'inst', 'ins', 'in', 'i', 'isntall', 'isntal', 'isnta', 'isnt', 'add'],
+  pnpm: ['install', 'add', 'i'],
+  yarn: ['install', 'add'],
+  bun: ['install', 'add', 'i', 'a'],
+};
+// One shell command: manager, any leading flags, verb, then arguments up to a
+// backtick, separator, shell comment or end of line.
+const INSTALL_COMMAND = new RegExp(
+  `\\b(npm|pnpm|yarn|bun)((?:\\s+-[-\\w=]*)*)\\s+(${[...new Set(Object.values(INSTALL_VERBS).flat())]
+    .sort((a, b) => b.length - a.length)
+    .join('|')})(?![-\\w])([^\`&|;#\\n]*)`,
+  'g',
+);
 const INSTALL_DOCS = [
   'README.md',
   'SKILL.md',
   'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
 ];
+/** Every text document in the tree an agent could copy a command from; audits/ are historical records. */
+const installScannedDocs = () =>
+  tree().filter((f) => /\.(md|sh|ya?ml|json)$/.test(f) && !f.split(path.sep).includes('audits'));
 check('every by-hand install of nanocurrency-web is pinned exact, per document', () => {
   const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
   const bad = [];
   const counts = {};
-  for (const doc of DOCS) {
+  const docs = installScannedDocs();
+  for (const doc of INSTALL_DOCS) assert.ok(docs.includes(doc), `${doc} is missing from the scanned tree`);
+  for (const doc of docs) {
     counts[doc] = 0;
     const lines = read(doc).split('\n');
     lines.forEach((line, i) => {
-      // One shell command: stop at backticks, separators and shell comments.
-      for (const [cmd, args] of line.matchAll(/\b(?:npm|pnpm|yarn)\s+(?:i|install|add)\b([^`&|;#\n]*)/g)) {
-        const tokens = args.trim().split(/\s+/).filter(Boolean);
-        const pkg = tokens.filter((t) => t.replace(/^["']|["']$/g, '').startsWith('nanocurrency-web'));
+      // Markdown prose is hard-wrapped: a command that runs to the end of its
+      // line may carry its package on the next one, so read the two together.
+      // Only commands that start on this line are counted, so none counts twice.
+      const runsToEnd = [...line.matchAll(INSTALL_COMMAND)].some((m) => m.index + m[0].length === line.length);
+      const text = doc.endsWith('.md') && runsToEnd && i + 1 < lines.length ? `${line} ${lines[i + 1]}` : line;
+      for (const m of text.matchAll(INSTALL_COMMAND)) {
+        if (m.index >= line.length) continue;
+        const [whole, manager, preFlags, verb, args] = m;
+        if (!INSTALL_VERBS[manager].includes(verb)) continue;
+        const tokens = `${preFlags} ${args}`.trim().split(/\s+/).filter(Boolean).map((t) => t.replace(/^["']|["']$/g, ''));
+        const pkg = tokens.filter((t) => t.startsWith('nanocurrency-web'));
         if (pkg.length === 0) continue;
         counts[doc] += 1;
-        const exactSpec = pkg.every((t) => t.replace(/^["']|["']$/g, '') === `nanocurrency-web@${pinned}`);
-        const exactFlag = tokens.some((t) => EXACT_FLAGS.has(t));
-        if (!exactSpec || !exactFlag) bad.push(`${doc}:${i + 1}: ${cmd.trim()}`);
+        const exactSpec = pkg.every((t) => t === `nanocurrency-web@${pinned}`);
+        const exactFlag = tokens.some(EXACT_FLAG[manager]);
+        if (!exactSpec || !exactFlag) bad.push(`${doc}:${i + 1}: ${whole.trim()}`);
       }
     });
   }
