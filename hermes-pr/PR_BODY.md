@@ -16,7 +16,7 @@ hermes skills install official/blockchain/proof-agent
 ## Files
 - `optional-skills/blockchain/proof-agent/SKILL.md` — the skill (Hermes frontmatter convention).
 - `optional-skills/blockchain/proof-agent/scripts/nano-pay.cjs` — small, auditable Nano client
-  (`nanocurrency-web@^1.4.3`, public-RPC failover, **no API key, no custodian**). Commands:
+  (`nanocurrency-web@1.4.3`, public-RPC failover, **no API key, no custodian**). Commands:
   `new · address · balance · receive · fund · send`.
 
 > Docs/catalog pages are auto-generated — run `python website/scripts/generate-skill-docs.py` to
