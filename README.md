@@ -38,7 +38,8 @@ npm test             # offline: `new` and `address` derive a real, checksum-vali
 ```
 
 Copying the script on its own instead (the Manual install above, or `SKILL.md`'s inline copy)?
-Then run `npm init -y && npm i nanocurrency-web@^1.4.3` beside it — `SKILL.md`'s own setup line.
+Then run `npm init -y && npm i nanocurrency-web@1.4.3` beside it — `SKILL.md`'s own setup line.
+The version is exact on purpose: it is the one the suite and CI run against.
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
