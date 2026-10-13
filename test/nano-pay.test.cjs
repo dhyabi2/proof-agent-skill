@@ -558,4 +558,50 @@ check('every document installs the exact nanocurrency-web the suite ran against'
   assert.ok(seen >= 2, `expected at least 2 documented install specs, found ${seen}`);
 });
 
+// The check above reads only `nanocurrency-web@<spec>`, so it let two things
+// through. A bare `npm i nanocurrency-web` carries no `@` at all and installs
+// whatever `latest` is - 2.0.0 today. And `npm i nanocurrency-web@1.4.3`
+// without -E still writes "^1.4.3" into the reader's own package.json, so the
+// first `npm update`, or any install without that lockfile, floats it across
+// 1.x anyway. So every by-hand install command in the documents that names the
+// library must ask for the pinned version AND save it exact, and each document
+// that tells an agent to set the script up alone must carry such a line.
+const EXACT_FLAGS = new Set(['-E', '--save-exact', '--exact']);
+const INSTALL_DOCS = [
+  'README.md',
+  'SKILL.md',
+  'hermes-pr/optional-skills/blockchain/proof-agent/SKILL.md',
+];
+check('every by-hand install of nanocurrency-web is pinned exact, per document', () => {
+  const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
+  const bad = [];
+  const counts = {};
+  for (const doc of DOCS) {
+    counts[doc] = 0;
+    const lines = read(doc).split('\n');
+    lines.forEach((line, i) => {
+      // One shell command: stop at backticks, separators and shell comments.
+      for (const [cmd, args] of line.matchAll(/\b(?:npm|pnpm|yarn)\s+(?:i|install|add)\b([^`&|;#\n]*)/g)) {
+        const tokens = args.trim().split(/\s+/).filter(Boolean);
+        const pkg = tokens.filter((t) => t.replace(/^["']|["']$/g, '').startsWith('nanocurrency-web'));
+        if (pkg.length === 0) continue;
+        counts[doc] += 1;
+        const exactSpec = pkg.every((t) => t.replace(/^["']|["']$/g, '') === `nanocurrency-web@${pinned}`);
+        const exactFlag = tokens.some((t) => EXACT_FLAGS.has(t));
+        if (!exactSpec || !exactFlag) bad.push(`${doc}:${i + 1}: ${cmd.trim()}`);
+      }
+    });
+  }
+  assert.deepStrictEqual(
+    bad,
+    [],
+    `these install lines would not reproduce the exact nanocurrency-web ${pinned} the suite ran ` +
+      `against (each must read \`npm i -E nanocurrency-web@${pinned}\` or use --save-exact):\n  ` +
+      bad.join('\n  '),
+  );
+  for (const doc of INSTALL_DOCS) {
+    assert.ok(counts[doc] >= 1, `${doc} must carry a by-hand install line for nanocurrency-web, found none`);
+  }
+});
+
 process.exit(failed === 0 ? 0 : 1);
