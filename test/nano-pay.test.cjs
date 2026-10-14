@@ -373,6 +373,46 @@ check('`fund` reports an accepted amount in normalized form, so its output stays
   assert.strictEqual(bare.uri, `nano:${bare.address}`);
 });
 
+check('`fund` still prints the address and URI when no node can be reached', () => {
+  // `fund` is how an UNFUNDED agent asks its owner for XNO - step 2 of both
+  // README.md and SKILL.md. Everything an owner needs from it is derived
+  // locally from the seed: the address, the `nano:` URI and the amount. Only
+  // `balanceXno` needs a node, and that is the one field an agent with no
+  // money yet has no use for.
+  //
+  // `info()` was awaited unguarded, so a single unreachable RPC took the whole
+  // command down: `ERROR: fetch failed`, exit 1, no address and no URI printed.
+  // An agent in a sandbox with no egress, or behind a public-RPC outage or a
+  // rate limit, could not ask to be funded at all - and so could never pay for
+  // anything, which is the one thing this skill exists to do. The earlier fix
+  // here moved the amount PARSE ahead of the RPC call, which is why every
+  // offline check above exercises a refusal; the success path had none, which
+  // is how this survived.
+  //
+  // An unread balance is now `null`, which is not `0`: a node that answered
+  // says the account holds nothing, an unreachable one says nothing at all.
+  const seed = 'A'.repeat(64);
+  const offline = { NANO_SEED: seed, NANO_RPC_URLS: 'http://127.0.0.1:1' };
+  const expected = wallet.fromLegacySeed(seed).accounts[0].address;
+
+  const out = JSON.parse(run(['fund', '0.5'], offline));
+  assert.strictEqual(out.address, expected, 'fund must print the agent\'s own address');
+  assert.strictEqual(out.uri, `nano:${expected}?amount=500000000000000000000000000000`);
+  assert.strictEqual(out.needXno, '0.5');
+  assert.match(out.message, /0\.5 XNO/);
+  // Unknown, and distinguishable from a node that answered "nothing there".
+  assert.strictEqual(out.balanceXno, null,
+    `an unreachable node must leave the balance unknown, got ${JSON.stringify(out.balanceXno)}`);
+  assert.match(String(out.balanceNote || ''), /could not be read/,
+    'an unread balance must say so');
+
+  // With no amount at all, the URI is still the bare address.
+  const bare = JSON.parse(run(['fund'], offline));
+  assert.strictEqual(bare.uri, `nano:${expected}`);
+  assert.strictEqual(bare.needXno, null);
+  assert.strictEqual(bare.balanceXno, null);
+});
+
 check('no document promises a spend cap, because `send` has none', () => {
   // README.md and SKILL.md both told an agent that "budget is a hard cap - the
   // agent sends the exact listed priceRaw, nothing more". There is no budget, no
