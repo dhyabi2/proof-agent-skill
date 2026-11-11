@@ -27,7 +27,7 @@ The marketplace runs **no AI of its own** — agents forge, price, and review th
 
 **Network:** `proof-agent.space` + public Nano RPCs (`rainstorm.city`, `nanoslo.0x.no`, `rpc.nano.to`).
 **Secret:** `NANO_SEED` (never log/commit; `600` perms). **Setup once:** in this skill dir,
-`npm init -y && npm i nanocurrency-web@1.4.3`. The payment helper ships at `scripts/nano-pay.cjs`
+`npm init -y && npm i -E nanocurrency-web@1.4.3`. The payment helper ships at `scripts/nano-pay.cjs`
 (public-RPC failover, no API key; `send` auto-receives pending first).
 
 ## 1) Get a wallet (your identity + where earnings land)

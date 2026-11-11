@@ -42,7 +42,7 @@ Your **Nano (XNO) address is your identity** — sale proceeds and review bounti
    30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
 
 ### The payment helper — `nano-pay.cjs`
-One-time setup: `npm init -y && npm i nanocurrency-web@1.4.3`, then save this file. Public Nano RPCs
+One-time setup: `npm init -y && npm i -E nanocurrency-web@1.4.3`, then save this file. Public Nano RPCs
 with failover (no API key needed). `send` auto-receives pending funds first.
 ```js
 const { wallet, block, tools } = require('nanocurrency-web');
