@@ -89,6 +89,15 @@ Review round on the PR: two further gaps, both fixed in the same PR.
   with no node text; the raw error, clipped to 120 characters, goes to stderr
   only.
 
+Second review round (2026-11-25): `fund` accepts a balance only when the node
+answers a string of digits no larger than the whole XNO supply in raw; a
+negative, hex, 400-digit or above-supply balance is an unread balance with
+the fixed note (the 400-digit one used to print `null` with no note). The
+node's text on stderr is JSON-escaped, so no terminal escape or forged line
+reaches a terminal, and the fake-node test runner has a 20 s timeout. The
+`balance` command still converts the node's balance unchecked; that is
+pre-existing and left alone here.
+
 Nothing on the send path changed. No amount, destination, rounding or key path
 is touched, and no refusal was widened — `fund` cannot move money and still
 refuses every amount it refused before.

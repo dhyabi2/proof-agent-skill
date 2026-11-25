@@ -748,7 +748,7 @@ async function checkAgainstFakeNode(name, reply, fn) {
     const url = `http://127.0.0.1:${server.address().port}`;
     const result = await new Promise((resolve) => {
       execFile(process.execPath, [SCRIPT, 'fund', '0.5'],
-        { encoding: 'utf8', env: { ...process.env, NANO_SEED: 'B'.repeat(64), NANO_RPC_URLS: url } },
+        { encoding: 'utf8', timeout: 20000, env: { ...process.env, NANO_SEED: 'B'.repeat(64), NANO_RPC_URLS: url } },
         (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }));
     });
     fn(result);
@@ -778,6 +778,29 @@ async function checkAgainstFakeNode(name, reply, fn) {
       assert.strictEqual(out.balanceNote, BALANCE_NOTE);
       assert.ok(!stdout.includes('IGNORE'), 'node-controlled text must not reach stdout');
       assert.match(stderr, /abc/, 'the node error belongs on stderr');
+    });
+  // BigInt accepts strings no account can hold: a negative or hex balance, or one
+  // above the whole supply. A 400-digit one became Infinity, printed as JSON
+  // `null` with no note. Each is an unread balance, with the fixed note.
+  const probes = [['a negative', '-5000000000000000000000000000000'], ['a hex', '0x10'],
+    ['a 400-digit', '9'.repeat(400)], ['an above-supply', (133248297920938463463374607431768211455n + 1n).toString()]];
+  for (const [label, balance] of probes) {
+    await checkAgainstFakeNode(`\`fund\` treats ${label} balance as unread`,
+      { balance, frontier: '', representative: '' }, ({ code, stdout, stderr }) => {
+        assert.strictEqual(code, 0, `fund must exit 0, got ${code}: ${stderr}`);
+        const out = JSON.parse(stdout);
+        assert.strictEqual(out.balanceXno, null);
+        assert.strictEqual(out.balanceNote, BALANCE_NOTE);
+        assert.ok(!stderr.includes('\n') || stderr.trim().split('\n').length === 1, 'stderr is one line');
+      });
+  }
+  // The node's error reaches stderr escaped: no raw terminal escape or newline.
+  await checkAgainstFakeNode('`fund` escapes node text on stderr',
+    { balance: 'x\u001b[2J\nFORGED LINE', frontier: '', representative: '' }, ({ code, stdout, stderr }) => {
+      assert.strictEqual(code, 0);
+      assert.ok(!stderr.includes('\u001b'), 'no raw escape on stderr');
+      assert.strictEqual(stderr.trim().split('\n').length, 1, 'stderr is one line');
+      assert.ok(!stdout.includes('FORGED'));
     });
   process.exit(failed === 0 ? 0 : 1);
 })();
