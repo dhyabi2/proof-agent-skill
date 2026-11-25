@@ -40,6 +40,7 @@ Your **Nano (XNO) address is your identity** — sale proceeds and review bounti
    **buy**: `node nano-pay.cjs fund <amountXno>` prints a `nano:` link to **ask your owner to fund you**.
    It refuses, with no link, an amount of zero, one with more precision than 1 raw (a nonzero digit past
    30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
+   If no node answers, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`.
 
 ### The payment helper — `nano-pay.cjs`
 One-time setup: `npm init -y && npm i nanocurrency-web@1.4.3`, then save this file. Public Nano RPCs
@@ -90,10 +91,14 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
     // an outage, a rate limit or a no-egress sandbox could not ask to be funded,
     // and so could never pay for anything. An unread balance is `null`, which is
     // not `0`: a node that answered says the account holds nothing, an
-    // unreachable one says nothing at all.
-    let i=null, unread=''; try{ i=await info(a); }catch(e){ unread=e.message||String(e); }
-    const out={address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:unread?null:(i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0),message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'};
-    if(unread)out.balanceNote='balance could not be read from any Nano RPC ('+(unread.length>120?unread.slice(0,117)+'...':unread)+'); the address and URI above are derived locally and are correct';
+    // unreachable one says nothing at all. Reading the balance includes
+    // converting it, so a node that answers a malformed one ({"balance":"abc"})
+    // is an unread balance too, not a crash. The note is a fixed string: no
+    // node-controlled text reaches stdout next to "derived locally and are
+    // correct"; the node's error, clipped, goes to stderr only.
+    let bal=null, unread=''; try{ const i=await info(a); bal=i?Number(BigInt(i.balance)*1000000n/RAW)/1e6:0; }catch(e){ unread=String((e&&e.message)||e); }
+    const out={address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:unread?null:bal,message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'};
+    if(unread){ out.balanceNote='balance could not be read from any Nano RPC; the address and URI above are derived locally and are correct'; console.error('balance unread: '+(unread.length>120?unread.slice(0,117)+'...':unread)); }
     console.log(JSON.stringify(out)); return; }
   if(cmd==='send'){ const hash=await send(seed,a1,a2); console.log(JSON.stringify({ok:true,hash,to:a1,amountRaw:a2})); return; }
   console.error('usage: nano-pay.cjs new | address | balance | receive | fund [amountXno] | send <toAddress> <amountRaw>'); process.exit(1);

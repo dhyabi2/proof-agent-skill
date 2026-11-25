@@ -2,6 +2,11 @@
 
 Lens: can an agent pay in XNO with this, today, without being hurt?
 
+> **Dated record.** This describes the repository as it stood on 2026-10-14 and
+> is not kept current. Since then GitHub Actions CI (`.github/workflows/`) was
+> removed on `main` (25efa0b), so the references below to `ci.yml` and to CI are
+> historical: the suite is now run by hand (`npm install --ignore-scripts && npm test`).
+
 ## Checked
 
 - `npm install && npm test` — 11 ok / 0 fail, exit 0, before any change.
@@ -68,11 +73,21 @@ success path had no offline coverage at all.
 ## Fixed
 
 The balance read is wrapped, so everything local still prints and the balance is
-reported as `null` with a `balanceNote` saying why. `null` is deliberately not
+reported as `null` with a `balanceNote` saying it could not be read. `null` is deliberately not
 `0`: a node that answered says the account holds nothing, an unreachable one
 says nothing at all — the same distinction between a fact and an unknown that
-`nano-receipt-ledger`'s node layer draws. The node's error text is clipped to
-120 characters so an endpoint cannot choose an unbounded message.
+`nano-receipt-ledger`'s node layer draws.
+
+Review round on the PR: two further gaps, both fixed in the same PR.
+- The balance *conversion* (`BigInt(i.balance)`) sat outside the guard, so a
+  node that answered a malformed balance (`{"balance":"abc"}`) still exited 1
+  with no address and no URI. Reading the balance now includes converting it,
+  so that case is an unread balance too.
+- The note quoted the node's error in stdout, right beside "the address and
+  URI above are derived locally and are correct" - node-controlled text an
+  agent would read as part of the answer. `balanceNote` is now a fixed string
+  with no node text; the raw error, clipped to 120 characters, goes to stderr
+  only.
 
 Nothing on the send path changed. No amount, destination, rounding or key path
 is touched, and no refusal was widened — `fund` cannot move money and still
@@ -87,19 +102,22 @@ Tests: `` `fund` still prints the address and URI when no node can be reached ``
 — asserts the address against the library's own derivation, the exact `nano:`
 URI including `?amount=500000000000000000000000000000`, `needXno`, the message,
 `balanceXno === null` and the note, plus the no-amount form. It fails on `main`
-with `Command failed ... ERROR: fetch failed` and passes after.
+with `Command failed ... ERROR: fetch failed` and passes after. A second test,
+`` `fund` still prints the address and URI when a node answers a malformed balance ``,
+serves a fake node on 127.0.0.1 that answers a non-numeric balance carrying
+injected text, and asserts exit 0, the address and URI, `balanceXno === null`,
+the fixed note, and that the node's text appears on stderr and not on stdout.
 
-Suite after: **12 ok / 0 fail, exit 0.** `node --check` passes, and the change
-uses nothing newer than ES2017, so CI's Node 18 floor is unaffected.
+Suite after (2026-10-14): **12 ok / 0 fail, exit 0**; after the review round,
+run by hand: **13 ok / 0 fail**. `node --check` passes, and the change uses
+nothing newer than ES2017, so Node 18 is still enough.
 
 ## Could not verify
 
 - **The four documented URLs.** `https://proof-agent.space`, its `/skill.md`,
   `/.well-known/skills/SKILL.md` and `/llms.txt`, and `https://agentskills.io`,
-  are all unreachable from this session — but as a **policy denial in my own
-  container**, not a fault in the repository: the agent proxy answers `403` to
-  `CONNECT` for those hosts (`recentRelayFailures` names each one). So this run
-  can say nothing about whether they 404; it is not evidence that they do.
+  were unreachable from the audit environment. So this run can say nothing
+  about whether they 404; it is not evidence that they do.
 - The live network paths: `receive`, `send`, `balance` and `work_generate` were
   never exercised against a real node or real funds, by design — the suite
   points the script at a closed port and the repository holds no key.
@@ -114,4 +132,8 @@ uses nothing newer than ES2017, so CI's Node 18 floor is unaffected.
   XNO supply and `balance` prints `balanceRaw` beside it. Not worth a change.
 - `.github/workflows/ci.yml`'s comment saying the suite is "6 ok / 0 fail",
   measured 2026-10-04 and now 12. It reads as a dated measurement rather than a
-  law, and a commit that only corrects a stale number is noise.
+  law, and a commit that only corrects a stale number is noise. (The workflow
+  has since been removed on `main`.)
+- Pre-existing, not fixed in this PR: `info()` defaults a missing balance to
+  `'0'` (`balance: r.balance || '0'`), so a node that answers 200 with neither
+  `balance` nor `error` reads as 0 XNO rather than as an unread balance.

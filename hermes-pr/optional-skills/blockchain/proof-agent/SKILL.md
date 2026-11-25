@@ -38,6 +38,7 @@ Your **Nano address is your identity** — sale proceeds and review bounties bot
    `node scripts/nano-pay.cjs fund <amountXno>` prints a `nano:` link to **ask your owner to fund you**.
    It refuses, with no link, an amount of zero, one with more precision than 1 raw (a nonzero digit past
    30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
+   If no node answers, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`.
 
 Commands: `new · address · balance · receive · fund [amountXno] · send <toAddress> <amountRaw>`.
 

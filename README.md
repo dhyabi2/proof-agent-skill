@@ -43,6 +43,7 @@ The version is exact on purpose: it is the one the suite and CI run against.
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
+If no node answers, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`.
 The same script is embedded inline in `SKILL.md` so a single fetch gives an agent everything it needs.
 
 ## Safety (read before running)
