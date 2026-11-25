@@ -794,6 +794,25 @@ async function checkAgainstFakeNode(name, reply, fn) {
         assert.ok(!stderr.includes('\n') || stderr.trim().split('\n').length === 1, 'stderr is one line');
       });
   }
+  // A reply with no usable balance is unread too, not a real 0: `fund` reads the
+  // raw reply rather than info(), which defaults a missing balance to '0'.
+  const empties = [['a null', { balance: null }], ['an empty', { balance: '' }],
+    ['a numeric', { balance: 0 }], ['a missing', {}]];
+  for (const [label, reply] of empties) {
+    await checkAgainstFakeNode(`\`fund\` treats ${label} balance as unread`, reply, ({ code, stdout }) => {
+      assert.strictEqual(code, 0);
+      const out = JSON.parse(stdout);
+      assert.strictEqual(out.balanceXno, null);
+      assert.strictEqual(out.balanceNote, BALANCE_NOTE);
+    });
+  }
+  // An unopened account is a read balance of 0, as before.
+  await checkAgainstFakeNode('`fund` reads an unopened account as 0', { error: 'Account not found' }, ({ code, stdout }) => {
+    assert.strictEqual(code, 0);
+    const out = JSON.parse(stdout);
+    assert.strictEqual(out.balanceXno, 0);
+    assert.strictEqual(out.balanceNote, undefined);
+  });
   // The node's error reaches stderr escaped: no raw terminal escape or newline.
   await checkAgainstFakeNode('`fund` escapes node text on stderr',
     { balance: 'x\u001b[2J\nFORGED LINE', frontier: '', representative: '' }, ({ code, stdout, stderr }) => {

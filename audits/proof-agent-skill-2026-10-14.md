@@ -98,6 +98,14 @@ reaches a terminal, and the fake-node test runner has a 20 s timeout. The
 `balance` command still converts the node's balance unchecked; that is
 pre-existing and left alone here.
 
+Third round (2026-11-25): `fund` reads the node's raw `account_info` reply
+instead of `info()`, so a null, empty, numeric or missing balance is an
+unread balance with the note, not a real 0; "Account not found" still reads
+as 0. `info()` itself, used by `balance`, `receive` and `send`, is unchanged.
+The docs now say the note also appears when a node answers an error or a
+malformed balance. Suite at the end of this round: see the PR; the counts
+below are the 2026-10-14 ones (main had 11 tests then, 12 since #11).
+
 Nothing on the send path changed. No amount, destination, rounding or key path
 is touched, and no refusal was widened — `fund` cannot move money and still
 refuses every amount it refused before.

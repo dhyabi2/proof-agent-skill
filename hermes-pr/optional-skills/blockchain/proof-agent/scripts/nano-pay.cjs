@@ -46,10 +46,12 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
     // unreachable one says nothing at all. Reading the balance includes
     // converting it, so a node that answers a malformed one ({"balance":"abc"})
     // is an unread balance too, not a crash; so is one BigInt would accept but
-    // no account can hold (negative, hex, above the whole supply). The note is a fixed string: no
+    // no account can hold (negative, hex, above the whole supply), and so is a
+    // reply with no balance at all: `fund` reads the node's raw reply, not
+    // `info()`, whose missing balance defaults to '0'. The note is a fixed string: no
     // node-controlled text reaches stdout next to "derived locally and are
     // correct"; the node's error, clipped, goes to stderr only.
-    let bal=null, unread=''; try{ const i=await info(a); const s=i?i.balance:'0'; if(typeof s!=='string'||!/^\d{1,40}$/.test(s)||BigInt(s)>SUPPLY_RAW)throw new Error('malformed balance '+JSON.stringify(String(s).slice(0,80))); bal=Number(BigInt(s)*1000000n/RAW)/1e6; }catch(e){ unread=String((e&&e.message)||e); }
+    let bal=null, unread=''; try{ const r=await rpc('account_info',{account:a}); const s=r&&r.error==='Account not found'?'0':r&&r.balance; if(typeof s!=='string'||!/^\d{1,40}$/.test(s)||BigInt(s)>SUPPLY_RAW)throw new Error('malformed balance '+JSON.stringify(String(s).slice(0,80))); bal=Number(BigInt(s)*1000000n/RAW)/1e6; }catch(e){ unread=String((e&&e.message)||e); }
     const out={address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:unread?null:bal,message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'};
     if(unread){ out.balanceNote='balance could not be read from any Nano RPC; the address and URI above are derived locally and are correct'; console.error('balance unread: '+JSON.stringify(unread.length>120?unread.slice(0,117)+'...':unread)); }
     console.log(JSON.stringify(out)); return; }
