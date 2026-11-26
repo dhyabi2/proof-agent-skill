@@ -565,12 +565,12 @@ check('every copy of the payment script in this repository is byte-identical to 
 
 // The dependency an agent installs by hand must be the one these checks ran
 // against. `package.json` pins nanocurrency-web to an exact version, and
-// .github/workflows/ci.yml says in as many words that "Nothing is floating".
+// the clone installs exactly that version (this repository no longer has a CI workflow).
 // But a clone is not the only way in: README.md and both SKILL.md files tell an
 // agent copying the script on its own to `npm i nanocurrency-web@<spec>`, and
 // the hermes-pr bundle carries that line to an outside maintainer. Those lines
 // asked for a caret range, so the standalone and Hermes installs floated across
-// 1.x while the clone and CI did not - on the library that derives the seed and
+// 1.x while the clone did not - on the library that derives the seed and
 // signs every send block. (It resolves to the pinned version today only because
 // no 1.4.4 has shipped; `latest` on the registry is already 2.0.0.)
 //
@@ -605,7 +605,7 @@ check('every document installs the exact nanocurrency-web the suite ran against'
         spec,
         pinned,
         `${doc} tells the reader to install nanocurrency-web@${spec}, but package.json pins ` +
-          `${pinned} and that is the only version this suite and CI ever run. An agent that ` +
+          `${pinned} and that is the only version this suite ever runs. An agent that ` +
           `copies the script on its own - which SKILL.md is written to be - would install a ` +
           `different build of the library that derives its seed and signs its sends. Ask for ` +
           `${pinned} exactly, or change the pin in package.json too.`,

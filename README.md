@@ -45,9 +45,11 @@ exact into your `package.json`, where a bare `@2.0.0` would be saved as `^2.0.0`
 > **Before this change the skill pinned `nanocurrency-web` 1.4.3, and `new` made its wallets with that version.**
 > The library's maintainer has since deprecated 1.4.0–1.4.3 on [npm](https://www.npmjs.com/package/nanocurrency-web)
 > with this text: "SECURITY WARNING (CVE-2026-71851): This version uses a cryptographically insecure random number
-> generator for wallet creation, potentially allowing attackers to recover private keys and steal funds. Upgrade to
-> >=2.0.0 immediately. Wallets generated with affected versions may remain vulnerable after upgrading. Create a new
-> wallet and transfer your funds."
+> generator for wallet creation, potentially allowing attackers to recover private keys and steal funds. Upgrade
+> to >=2.0.0 immediately. Wallets generated with affected versions may remain vulnerable after upgrading. Create a new
+> wallet and transfer your funds." To do that: re-run the setup line so 2.0.0 is what is installed, run `new` and keep
+> the new seed, read the old wallet's `balanceRaw` with `balance` (old seed), then `send <newAddress> <balanceRaw>`
+> with the old seed. Your address is your identity in the marketplace, so it changes with the new wallet.
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
