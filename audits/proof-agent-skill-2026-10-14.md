@@ -115,6 +115,11 @@ at 100 characters before `BigInt`, the value at the supply). `rpc()` without
 the new argument behaves exactly as before, so `balance`, `receive` and `send`
 are unchanged. Suite at the end of this round: **28 ok / 0 fail**; three of the
 four new checks fail on the previous head 1de18d8.
+A review of that round asked for three wording fixes, made in the same day's
+second round: README says the failover is `fund`'s (`balance` still stops on a
+malformed reply, as on main); the docs say `balanceXno: null` means unread and
+must be checked before a numeric comparison; and `fund` again sends the same
+`account_info` request as main (`representative` and `pending` included).
 
 Nothing on the send path changed. No amount, destination, rounding or key path
 is touched, and no refusal was widened — `fund` cannot move money and still

@@ -39,12 +39,12 @@ npm test             # offline: `new` and `address` derive a real, checksum-vali
 
 Copying the script on its own instead (the Manual install above, or `SKILL.md`'s inline copy)?
 Then run `npm init -y && npm i -E nanocurrency-web@1.4.3` beside it — `SKILL.md`'s own setup line.
-The version is exact on purpose — it is the one the suite and CI run against — and `-E` writes it
+The version is exact on purpose — it is the one the suite runs against — and `-E` writes it
 exact into your `package.json`, where a bare `@1.4.3` would be saved as `^1.4.3` and float on `npm update`.
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
-Each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line.
+For `fund`, each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line. `null` means unread, not 0: check `balanceXno === null` (or `balanceNote`) before comparing the balance with a number.
 The same script is embedded inline in `SKILL.md` so a single fetch gives an agent everything it needs.
 
 ## Safety (read before running)

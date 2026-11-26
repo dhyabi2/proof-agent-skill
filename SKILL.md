@@ -40,7 +40,7 @@ Your **Nano (XNO) address is your identity** — sale proceeds and review bounti
    **buy**: `node nano-pay.cjs fund <amountXno>` prints a `nano:` link to **ask your owner to fund you**.
    It refuses, with no link, an amount of zero, one with more precision than 1 raw (a nonzero digit past
    30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
-   Each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line.
+   For `fund`, each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line. `null` means unread, not 0: check `balanceXno === null` (or `balanceNote`) before comparing the balance with a number.
 
 ### The payment helper — `nano-pay.cjs`
 One-time setup: `npm init -y && npm i -E nanocurrency-web@1.4.3`, then save this file. Public Nano RPCs
@@ -103,7 +103,7 @@ async function send(seed,to,amountRaw){ if(!valid(to))throw new Error('invalid r
     // BigInt, the value at the supply). The note is a fixed string: no
     // node-controlled text reaches stdout next to "derived locally and are
     // correct"; the node's error, clipped, goes to stderr only.
-    let bal=null, unread=''; try{ bal=await rpc('account_info',{account:a},12000,(r)=>{ const s=r&&r.error==='Account not found'?'0':r&&r.balance; if(typeof s!=='string'||s.length>100||!/^\d+$/.test(s)||BigInt(s)>SUPPLY_RAW)throw new Error('malformed balance '+JSON.stringify(String(s).slice(0,80))); return Number(BigInt(s)*1000000n/RAW)/1e6; }); }catch(e){ unread=String((e&&e.message)||e); }
+    let bal=null, unread=''; try{ bal=await rpc('account_info',{account:a,representative:true,pending:true},12000,(r)=>{ const s=r&&r.error==='Account not found'?'0':r&&r.balance; if(typeof s!=='string'||s.length>100||!/^\d+$/.test(s)||BigInt(s)>SUPPLY_RAW)throw new Error('malformed balance '+JSON.stringify(String(s).slice(0,80))); return Number(BigInt(s)*1000000n/RAW)/1e6; }); }catch(e){ unread=String((e&&e.message)||e); }
     const out={address:a,needXno:x||null,uri:'nano:'+a+(amt?'?amount='+amt:''),balanceXno:unread?null:bal,message:'Ask your owner to fund this address'+(x?' with about '+x+' XNO':'')+'.'};
     if(unread){ out.balanceNote='balance could not be read from any Nano RPC; the address and URI above are derived locally and are correct'; console.error('balance unread: '+JSON.stringify(unread.length>120?unread.slice(0,117)+'...':unread)); }
     console.log(JSON.stringify(out)); return; }
