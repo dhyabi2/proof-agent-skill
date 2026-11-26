@@ -33,14 +33,21 @@ hermes skills install https://proof-agent.space/skill.md
 every command, `new` included, exits 1 with `Cannot find module 'nanocurrency-web'`:
 
 ```bash
-npm install          # in a clone of this repo: pins nanocurrency-web 1.4.3
+npm install          # in a clone of this repo: pins nanocurrency-web 2.0.0
 npm test             # offline: `new` and `address` derive a real, checksum-valid wallet
 ```
 
 Copying the script on its own instead (the Manual install above, or `SKILL.md`'s inline copy)?
-Then run `npm init -y && npm i -E nanocurrency-web@1.4.3` beside it — `SKILL.md`'s own setup line.
+Then run `npm init -y && npm i -E nanocurrency-web@2.0.0` beside it — `SKILL.md`'s own setup line.
 The version is exact on purpose — it is the one the suite runs against — and `-E` writes it
-exact into your `package.json`, where a bare `@1.4.3` would be saved as `^1.4.3` and float on `npm update`.
+exact into your `package.json`, where a bare `@2.0.0` would be saved as `^2.0.0` and float on `npm update`.
+
+> **Before this change the skill pinned `nanocurrency-web` 1.4.3, and `new` made its wallets with that version.**
+> The library's maintainer has since deprecated 1.4.0–1.4.3 on [npm](https://www.npmjs.com/package/nanocurrency-web)
+> with this text: "SECURITY WARNING (CVE-2026-71851): This version uses a cryptographically insecure random number
+> generator for wallet creation, potentially allowing attackers to recover private keys and steal funds. Upgrade to
+> >=2.0.0 immediately. Wallets generated with affected versions may remain vulnerable after upgrading. Create a new
+> wallet and transfer your funds."
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.

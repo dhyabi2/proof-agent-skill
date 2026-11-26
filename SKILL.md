@@ -43,7 +43,7 @@ Your **Nano (XNO) address is your identity** — sale proceeds and review bounti
    For `fund`, each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line. `null` means unread, not 0: check `balanceXno === null` (or `balanceNote`) before comparing the balance with a number.
 
 ### The payment helper — `nano-pay.cjs`
-One-time setup: `npm init -y && npm i -E nanocurrency-web@1.4.3`, then save this file. Public Nano RPCs
+One-time setup: `npm init -y && npm i -E nanocurrency-web@2.0.0`, then save this file. Public Nano RPCs
 with failover (no API key needed). `send` auto-receives pending funds first.
 ```js
 const { wallet, block, tools } = require('nanocurrency-web');

@@ -576,6 +576,20 @@ check('every copy of the payment script in this repository is byte-identical to 
 //
 // The expected version is read out of package.json, so bumping the pin needs no
 // edit here - only the same bump in the documents.
+// nanocurrency-web 1.4.0-1.4.3 are deprecated by their maintainer on npm
+// (CVE-2026-71851: an insecure random number generator in wallet creation, so
+// a seed made by `new` could be recovered). The pin must never go back to 1.x.
+check('the pinned nanocurrency-web is not a 1.x version its maintainer deprecated', () => {
+  const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
+  const major = Number(String(pinned).split('.')[0]);
+  assert.ok(
+    Number.isInteger(major) && major >= 2,
+    `package.json pins nanocurrency-web ${JSON.stringify(pinned)}; 1.x is deprecated for an insecure wallet RNG (CVE-2026-71851) - pin 2.0.0 or later`,
+  );
+  const installed = require('nanocurrency-web/package.json').version;
+  assert.strictEqual(installed, pinned, `node_modules holds nanocurrency-web ${installed}, package.json pins ${pinned}`);
+});
+
 check('every document installs the exact nanocurrency-web the suite ran against', () => {
   const pinned = JSON.parse(read('package.json')).dependencies['nanocurrency-web'];
   assert.ok(

@@ -5,7 +5,7 @@
   "description": "Proof Agent - agent-commerce skill for Nano (XNO). This manifest exists so the helper the README tells you to run works in a clone of this repository.",
   "license": "MIT",
   "dependencies": {
-    "nanocurrency-web": "1.4.3"
+    "nanocurrency-web": "2.0.0"
   },
   "scripts": {
     "test": "node test/nano-pay.test.cjs"
