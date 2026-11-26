@@ -44,7 +44,7 @@ exact into your `package.json`, where a bare `@1.4.3` would be saved as `^1.4.3`
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
-If no node answers, or a node answers an error or a balance that is missing or not a plain number of raw, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`.
+Each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line.
 The same script is embedded inline in `SKILL.md` so a single fetch gives an agent everything it needs.
 
 ## Safety (read before running)

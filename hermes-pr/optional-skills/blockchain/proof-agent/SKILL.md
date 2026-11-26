@@ -38,7 +38,7 @@ Your **Nano address is your identity** — sale proceeds and review bounties bot
    `node scripts/nano-pay.cjs fund <amountXno>` prints a `nano:` link to **ask your owner to fund you**.
    It refuses, with no link, an amount of zero, one with more precision than 1 raw (a nonzero digit past
    30 decimal places), one above the total XNO supply, or one that is not a plain decimal number.
-   If no node answers, or a node answers an error or a balance that is missing or not a plain number of raw, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`.
+   Each node in `NANO_RPC_URLS` is asked in turn; one that is down, answers an error, or answers a balance that is missing or not a plain number of raw is passed over. If no node gives a usable balance, `fund` still prints the address and URI, exits 0, and reports `balanceXno: null` with a `balanceNote`; the last node's reason is printed to stderr as one `balance unread: "..."` line.
 
 Commands: `new · address · balance · receive · fund [amountXno] · send <toAddress> <amountRaw>`.
 

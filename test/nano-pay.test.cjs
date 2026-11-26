@@ -761,6 +761,40 @@ async function checkAgainstFakeNode(name, reply, fn) {
   }
 }
 
+/**
+ * Several fake nodes, asked in the order given: NANO_RPC_URLS lists one URL per
+ * reply. Returns which nodes were asked, so a check can see the failover.
+ */
+async function checkAgainstFakeNodes(name, replies, fn) {
+  const http = require('node:http');
+  const { execFile } = require('node:child_process');
+  const asked = [];
+  const servers = replies.map((reply, i) => http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      asked.push(i);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(reply));
+    });
+  }));
+  try {
+    for (const server of servers) await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const urls = servers.map((server) => `http://127.0.0.1:${server.address().port}`).join(',');
+    const result = await new Promise((resolve) => {
+      execFile(process.execPath, [SCRIPT, 'fund', '0.5'],
+        { encoding: 'utf8', timeout: 20000, env: { ...process.env, NANO_SEED: 'B'.repeat(64), NANO_RPC_URLS: urls } },
+        (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr, asked }));
+    });
+    fn(result);
+    console.log(`ok   ${name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`FAIL ${name}\n     ${error.message}`);
+  } finally {
+    for (const server of servers) server.close();
+  }
+}
+
 (async () => {
   // `BigInt(i.balance)` sat outside the guard, so a node that answered
   // `{"balance":"abc"}` still took `fund` down: `ERROR: Cannot convert abc to a
@@ -820,6 +854,43 @@ async function checkAgainstFakeNode(name, reply, fn) {
       assert.ok(!stderr.includes('\u001b'), 'no raw escape on stderr');
       assert.strictEqual(stderr.trim().split('\n').length, 1, 'stderr is one line');
       assert.ok(!stdout.includes('FORGED'));
+    });
+  // A node that answers 200 with a malformed balance used to end the read: the
+  // good second node in NANO_RPC_URLS was never asked, and the note said "any
+  // Nano RPC" after one. The balance is now checked per node, like an error.
+  await checkAgainstFakeNodes('`fund` asks the next node when one answers a malformed balance',
+    [{ balance: '-5' }, { balance: '2000000000000000000000000000000' }], ({ code, stdout, asked }) => {
+      assert.strictEqual(code, 0);
+      const out = JSON.parse(stdout);
+      assert.deepStrictEqual(asked, [0, 1], 'both nodes are asked, in order');
+      assert.strictEqual(out.balanceXno, 2);
+      assert.strictEqual(out.balanceNote, undefined);
+    });
+  await checkAgainstFakeNodes('`fund` reports unread only after every node gave a malformed balance',
+    [{ balance: 'abc' }, { balance: '0x10' }], ({ code, stdout, stderr, asked }) => {
+      assert.strictEqual(code, 0);
+      const out = JSON.parse(stdout);
+      assert.deepStrictEqual(asked, [0, 1]);
+      assert.strictEqual(out.balanceXno, null);
+      assert.strictEqual(out.balanceNote, BALANCE_NOTE);
+      assert.match(stderr, /^balance unread: /);
+    });
+  // Leading zeros are a valid way to write a balance: `balance` reads
+  // 20 zeros + 10**30 raw as 1 XNO, and `fund` must agree. A string past 100
+  // characters stays unread, so BigInt never parses a huge one.
+  await checkAgainstFakeNode('`fund` reads a zero-padded balance as `balance` does',
+    { balance: '0'.repeat(20) + '1000000000000000000000000000000' }, ({ code, stdout }) => {
+      assert.strictEqual(code, 0);
+      const out = JSON.parse(stdout);
+      assert.strictEqual(out.balanceXno, 1);
+      assert.strictEqual(out.balanceNote, undefined);
+    });
+  await checkAgainstFakeNode('`fund` treats a balance string past 100 characters as unread',
+    { balance: '0'.repeat(100) + '1' }, ({ code, stdout }) => {
+      assert.strictEqual(code, 0);
+      const out = JSON.parse(stdout);
+      assert.strictEqual(out.balanceXno, null);
+      assert.strictEqual(out.balanceNote, BALANCE_NOTE);
     });
   process.exit(failed === 0 ? 0 : 1);
 })();

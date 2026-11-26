@@ -106,6 +106,16 @@ The docs now say the note also appears when a node answers an error or a
 malformed balance. Suite at the end of this round: **24 ok / 0 fail**; the counts
 below are the 2026-10-14 ones (main had 11 tests then, 12 since #11).
 
+Fourth round (2026-11-26): the balance check moved into the RPC loop, as an
+optional per-reply check that only `fund` passes, so a node answering a
+malformed balance is passed over like a node that is down and the next URL in
+`NANO_RPC_URLS` is asked; the note's "any Nano RPC" is now true. A balance
+written with leading zeros is read as `balance` reads it (the string is capped
+at 100 characters before `BigInt`, the value at the supply). `rpc()` without
+the new argument behaves exactly as before, so `balance`, `receive` and `send`
+are unchanged. Suite at the end of this round: **28 ok / 0 fail**; three of the
+four new checks fail on the previous head 1de18d8.
+
 Nothing on the send path changed. No amount, destination, rounding or key path
 is touched, and no refusal was widened — `fund` cannot move money and still
 refuses every amount it refused before.
