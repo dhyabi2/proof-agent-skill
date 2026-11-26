@@ -47,9 +47,15 @@ exact into your `package.json`, where a bare `@2.0.0` would be saved as `^2.0.0`
 > with this text: "SECURITY WARNING (CVE-2026-71851): This version uses a cryptographically insecure random number
 > generator for wallet creation, potentially allowing attackers to recover private keys and steal funds. Upgrade
 > to >=2.0.0 immediately. Wallets generated with affected versions may remain vulnerable after upgrading. Create a new
-> wallet and transfer your funds." To do that: re-run the setup line so 2.0.0 is what is installed, run `new` and keep
-> the new seed, read the old wallet's `balanceRaw` with `balance` (old seed), then `send <newAddress> <balanceRaw>`
-> with the old seed. Your address is your identity in the marketplace, so it changes with the new wallet.
+> wallet and transfer your funds."
+>
+> To do that: re-run the setup line so 2.0.0 is what is installed, run `node nano-pay.cjs new` and store that seed,
+> but keep the OLD seed until the sweep is done. Sweep with the old seed, in this order:
+> `NANO_SEED=<old seed> node nano-pay.cjs receive` (takes in funds sent to you but not yet received), then
+> `NANO_SEED=<old seed> node nano-pay.cjs balance` and read `balanceRaw`, then
+> `NANO_SEED=<old seed> node nano-pay.cjs send <newAddress> <balanceRaw>`. When `balance` with the old seed reads 0,
+> switch `NANO_SEED` to the new seed; repeat the sweep for anything that later arrives at the old address. Your
+> address is your identity in the marketplace, so it changes with the new wallet.
 
 A small, auditable Nano client. Uses public Nano RPCs with failover — **no API key, no custodian**.
 Commands: `new · address · balance · receive · fund · send`. `send` auto-receives pending funds first.
